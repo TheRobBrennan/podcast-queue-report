@@ -12,6 +12,16 @@ Reads a local Apple Podcasts library (SQLite) and generates a summary of the
 "Latest Episodes" unplayed queue plus listening stats, with a letter grade
 for how many days behind the oldest unplayed episode is.
 
+## In action
+
+The source data — Apple Podcasts' own "Latest Episodes" unplayed queue view:
+
+![Apple Podcasts Latest Episodes view](assets/podcasts-app-latest-episodes.png)
+
+The generated HTML report:
+
+![HTML report demo](assets/html-report-demo.gif)
+
 ## Setup
 
 ```bash
