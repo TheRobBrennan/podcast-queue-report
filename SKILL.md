@@ -35,7 +35,22 @@ on the user's Apple Podcasts unplayed queue.
    If this fails because the Podcasts database can't be found or opened,
    report the exact error to the user rather than guessing — do not fall
    back to fabricated data.
-3. Show the chat summary in the conversation.
+3. Show the chat summary in the conversation, and open the HTML report for
+   the user to see:
+   - **Running in a real shell on the Mac** (e.g. Claude Code with direct
+     shell access, or the user's own Terminal): run `make open` — it uses
+     the standard macOS `open` command, which launches the user's actual
+     default browser. This is the preferred path whenever it's available.
+   - **Running in Claude Cowork's sandboxed bash**: that shell is an
+     isolated Linux container with no path to the user's real screen, so
+     `open`/`make open` will not do anything visible. Do not try to work
+     around this by taking over the user's screen via computer-use unless
+     they're clearly not actively using their computer — check first, and
+     back off immediately if you see signs of active, unrelated use (other
+     open apps, personal content on screen, etc.). Instead, present the
+     generated `reports/podcast_report.html` file to the user directly
+     (e.g. via a file-sharing tool) so they can open it themselves with one
+     click.
 4. **Only if the user explicitly asks to send/text/email this run** (a
    standing schedule does not count as consent for an individual send —
    always confirm the specific run):

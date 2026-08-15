@@ -55,6 +55,7 @@ agent working in this repo. Run `make help` any time for the full list.
 | `make sms` | Prints the SMS text |
 | `make email` | Prints the email `SUBJECT:` + body |
 | `make html` | Regenerates `reports/podcast_report.html` |
+| `make open` | Regenerates the HTML report and opens it in your default browser (macOS `open`) |
 | `make all` | Runs the query once, then renders chat + sms + email + html |
 | `make unlock` | Clears stale git lock files (see "Git on a FUSE-backed folder" below) |
 | `make commit MSG='...'` | Unlocks, stages everything, commits |
@@ -65,6 +66,14 @@ alone re-queries the database fresh; `make all` only queries once and reuses
 that same snapshot for all four renders (important, since each run also
 advances the "since last check" stats window — you don't want `make all` to
 silently zero that out by running the query four times in a row).
+
+`make open` uses the standard macOS `open` command, so it launches your
+actual default browser — but only when run from a real shell on the Mac
+(a Terminal, or Claude Code with direct shell access). It will silently do
+nothing useful from inside Claude Cowork's sandboxed bash, since that shell
+is an isolated Linux container with no path to your real screen. In that
+environment, an AI agent running this skill should present the HTML file to
+you to open yourself, or use OS-level screen control — see `SKILL.md`.
 
 ### Running the underlying scripts directly
 

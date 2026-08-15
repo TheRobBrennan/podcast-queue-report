@@ -2,7 +2,7 @@ SHELL := /bin/bash
 PYTHON ?= python3
 RUN_JSON ?= /tmp/podcast_run.json
 
-.PHONY: help setup run chat sms email html all unlock commit clean
+.PHONY: help setup run chat sms email html open all unlock commit clean
 
 help:
 	@echo "Podcast Queue Report — available commands:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make sms               Print the SMS text"
 	@echo "  make email             Print the email SUBJECT + body"
 	@echo "  make html              Regenerate reports/podcast_report.html"
+	@echo "  make open              Regenerate the HTML report and open it in your browser"
 	@echo "  make all               Run once, then chat + sms + email + html"
 	@echo "  make unlock            Clear stale git lock files (see scripts/git_unlock.py)"
 	@echo "  make commit MSG='...'  Unlock, stage everything, and commit"
@@ -44,6 +45,9 @@ email: run
 html: run
 	$(PYTHON) render_report.py $(RUN_JSON) html > reports/podcast_report.html
 	@echo "Wrote reports/podcast_report.html"
+
+open: html
+	open reports/podcast_report.html
 
 all: chat sms email html
 
