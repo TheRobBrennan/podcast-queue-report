@@ -9,7 +9,10 @@ episode is.
 
 - `podcast_summary.py` — queries the Podcasts SQLite database, computes the
   unplayed queue (with a reverse-engineered heuristic — see caveats below),
-  listening stats for several time windows, and writes JSON to stdout.
+  listening stats for several time windows, episode/podcast links, and
+  writes JSON to stdout. Durations are formatted human-friendly (e.g. "1 day
+  2 hrs 38 mins 12 seconds") and episode/podcast titles link to their Apple
+  Podcasts pages.
 - `render_report.py` — renders that JSON into a chat summary, SMS text, email
   (subject + body), or a styled standalone HTML report.
 - `reports/podcast_report.html` — the most recently generated HTML report.
@@ -28,9 +31,20 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
 
 ## Grading scale
 
-A+ = empty queue, A = 0 days behind, A- = 1 day, B+ = 2 days, B = 3 days,
-B- = 4 days, C+/C/C- = 5-7 days, D+/D/D- = 8-10 days, F = 11+ days behind
-(based on the oldest unplayed episode's publish date vs. now, Pacific time).
+Grade is based on how many days behind the oldest unplayed episode's publish
+date is versus now (Pacific time).
+
+| Days behind      | Grade |
+|-------------------|:-----:|
+| Queue is empty     | A+    |
+| 0 days             | A     |
+| 1 day               | A-    |
+| 2 days              | B+    |
+| 3 days              | B     |
+| 4 days              | B-    |
+| 5 – 7 days          | C+ / C / C- |
+| 8 – 10 days         | D+ / D / D- |
+| 11+ days            | F     |
 
 ## Delivery
 
@@ -52,3 +66,5 @@ explicit go-ahead each time; nothing sends automatically, even on the daily
   the data, so totals (especially all-time) likely overcount true full
   listens.
 - Day/week boundaries use Pacific time (`America/Los_Angeles`).
+- Episode/podcast links point to Apple Podcasts (`podcasts.apple.com`),
+  built from each show's store page plus the episode's store track ID.
