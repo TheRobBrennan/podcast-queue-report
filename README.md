@@ -28,6 +28,11 @@ macOS (via Xcode Command Line Tools) — if `make setup` says "command not
 found," run `xcode-select --install` first, or just do the two steps by
 hand: `cp .env.example .env`, then edit it.
 
+Optional: install [`nowplaying-cli`](https://github.com/ungive/nowplaying-cli)
+(`brew install nowplaying-cli`) to have reports call out an episode you're
+actively playing right now ("Now playing"). Without it, every report just
+skips that section — nothing else depends on it.
+
 ### Using this as a Claude Code skill
 
 To let Claude (via Claude Code or Claude Cowork) run this on your behalf:
@@ -177,6 +182,12 @@ skip this entirely if you're not hitting the error above.
   necessarily ones fully finished — there's no reliable "completed" flag in
   the data, so totals (especially all-time) likely overcount true full
   listens.
+- "Now playing" detection relies on macOS's system-wide Now Playing info
+  (via `nowplaying-cli`), not the podcast library — it only reflects
+  Podcasts.app being the active player with a nonzero playback rate at
+  the moment the report runs. It won't show anything if Podcasts is
+  paused, backgrounded behind another app that's also using Now Playing,
+  or `nowplaying-cli` isn't installed.
 - Episode/podcast links point to Apple Podcasts (`podcasts.apple.com`),
   built from each show's store page plus the episode's store track ID —
   both are populated inconsistently depending on the podcast's source feed.
