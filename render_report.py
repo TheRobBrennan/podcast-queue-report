@@ -87,12 +87,27 @@ def build_html(d):
     q = d["queue"]
     p = d["played"]
 
+    def duration_html(total_fmt):
+        # fmt_duration joins "N\u00a0unit" pairs with plain spaces, so
+        # splitting on a plain space gives us each pair intact. When there
+        # are more than 3 (i.e. more granular than hr/min/sec), stack each
+        # on its own line instead of letting it wrap mid-sentence.
+        pairs = total_fmt.split(" ")
+        escaped = [html.escape(p) for p in pairs]
+        if len(escaped) > 3:
+            return "<br>".join(escaped)
+        return " ".join(escaped)
+
     def stat_card(label, stats):
+        noun = "episode" if stats["count"] == 1 else "episodes"
         return f'''
         <div class="card">
           <div class="card-label">{html.escape(label)}</div>
-          <div class="card-count">{stats["count_fmt"]}</div>
-          <div class="card-sub">episodes &middot; {stats["total_fmt"]}</div>
+          <div class="card-count-row">
+            <span class="card-count">{stats["count_fmt"]}</span>
+            <span class="card-count-unit">{noun}</span>
+          </div>
+          <div class="card-sub">{duration_html(stats["total_fmt"])}</div>
         </div>'''
 
     played_cards = ""
@@ -134,18 +149,19 @@ def build_html(d):
   body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; margin: 0; padding: 32px; color: #1e293b; }}
   .container {{ max-width: 720px; margin: 0 auto; }}
   .emoji-strip {{ font-size: 28px; letter-spacing: 2px; text-align: center; margin-bottom: 8px; line-height: 1.4; }}
-  .headline {{ text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 8px; }}
-  .subheadline {{ text-align: center; font-size: 14px; color: #475569; margin-bottom: 28px; }}
+  .headline {{ text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 28px; }}
   .grade-badge {{ display: inline-block; background: {grade_color}; color: white; border-radius: 8px; padding: 2px 12px; font-weight: 700; }}
   .queue-summary {{ background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   .queue-summary h2 {{ margin: 0 0 4px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }}
   .queue-summary .big {{ font-size: 32px; font-weight: 700; }}
   .queue-summary .sub {{ color: #64748b; font-size: 14px; margin-top: 4px; }}
   .cards {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 28px; }}
-  .card {{ background: white; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-  .card-label {{ font-size: 12px; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 6px; }}
-  .card-count {{ font-size: 26px; font-weight: 700; }}
-  .card-sub {{ font-size: 13px; color: #64748b; margin-top: 4px; line-height: 1.5; }}
+  .card {{ background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+  .card-label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.6px; margin-bottom: 8px; }}
+  .card-count-row {{ display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }}
+  .card-count {{ font-size: 28px; font-weight: 700; line-height: 1; }}
+  .card-count-unit {{ font-size: 13px; font-weight: 600; color: #94a3b8; }}
+  .card-sub {{ font-size: 13px; color: #64748b; line-height: 1.7; }}
   table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   th {{ text-align: left; font-size: 12px; text-transform: uppercase; color: #94a3b8; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }}
   td {{ padding: 12px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: top; font-size: 14px; }}
@@ -165,7 +181,6 @@ def build_html(d):
 <div class="container">
   <div class="emoji-strip">{d["emoji_header"]}</div>
   <div class="headline">That papa is {q["days_behind_fmt"]} days behind the times &mdash; Grade: <span class="grade-badge">{q["grade"]}</span> 🎧</div>
-  <div class="subheadline">{html.escape(up_next_sentence(q))}</div>
 
   <div class="queue-summary">
     <h2>Unplayed Queue</h2>
