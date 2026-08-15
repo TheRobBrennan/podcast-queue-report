@@ -72,6 +72,14 @@ def fmt_days_decimal(days):
         return str(int(round(days)))
     return f"{days:.1f}"
 
+
+def now_playing_sentence(d):
+    np = d.get("now_playing")
+    if not np:
+        return None
+    where = f' on {np["podcast"]}' if np["podcast"] else ""
+    return f'▶️ Now playing: "{np["title"]}"{where} — {np["remaining_fmt"]} left'
+
 def up_next_sentence(q):
     if not q["episodes"]:
         return "The queue is empty — you're all caught up!"
@@ -87,6 +95,10 @@ def build_chat_summary(d):
     lines.append(d["emoji_header"])
     lines.append(f'That papa is {q["days_behind_fmt"]} days behind the times — Grade: {q["grade"]} 🎧')
     lines.append("")
+    now_playing = now_playing_sentence(d)
+    if now_playing:
+        lines.append(now_playing)
+        lines.append("")
     lines.append(up_next_sentence(q))
     lines.append("")
     lines.append("Played:")
@@ -104,6 +116,10 @@ def build_discord(d):
     p = d["played"]
 
     description = f'Grade **{q["grade"]}** — {q["days_behind_fmt"]} days behind 🎧\n\n'
+    np = d.get("now_playing")
+    if np:
+        where = f' — {np["podcast"]}' if np["podcast"] else ""
+        description += f'🟢 **Now playing:** "{np["title"]}"{where} ({np["remaining_fmt"]} left)\n\n'
     if q["episodes"]:
         description += f'**Up next:** "{q["episodes"][0]["title"]}"'
     else:
@@ -134,9 +150,11 @@ def build_discord(d):
 
 def build_sms(d):
     q = d["queue"]
+    now_playing = now_playing_sentence(d)
     return (f'{d["emoji_header"]}\n'
             f'That papa is {q["days_behind_fmt"]} days behind the times — Grade: {q["grade"]} 🎧.  '
-            f'{up_next_sentence(q)}')
+            + (f'{now_playing}.  ' if now_playing else "")
+            + f'{up_next_sentence(q)}')
 
 def build_email(d):
     q = d["queue"]
@@ -147,6 +165,10 @@ def build_email(d):
     lines.append(d["emoji_header"])
     lines.append(f'That papa is {q["days_behind_fmt"]} days behind the times — Grade: {q["grade"]} 🎧')
     lines.append("")
+    now_playing = now_playing_sentence(d)
+    if now_playing:
+        lines.append(now_playing)
+        lines.append("")
     lines.append(up_next_sentence(q))
     lines.append("")
     lines.append("PLAYED")
@@ -218,6 +240,17 @@ def build_html(d):
     }
     grade_color = grade_colors.get(q["grade"], "#334155")
 
+    np = d.get("now_playing")
+    if np:
+        now_playing_html = (
+            '<div class="now-playing"><span class="dot"></span>'
+            f'<span class="text">&#9654;&#65039; <b>Now playing:</b> {html.escape(np["title"])}'
+            + (f' &mdash; {html.escape(np["podcast"])}' if np["podcast"] else "")
+            + f' ({np["remaining_fmt"]} left)</span></div>'
+        )
+    else:
+        now_playing_html = ""
+
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -229,6 +262,11 @@ def build_html(d):
   .emoji-strip {{ font-size: 28px; letter-spacing: 2px; text-align: center; margin-bottom: 8px; line-height: 1.4; }}
   .headline {{ text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 28px; }}
   .grade-badge {{ display: inline-block; background: {grade_color}; color: white; border-radius: 8px; padding: 2px 12px; font-weight: 700; }}
+  .now-playing {{ background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 14px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }}
+  .now-playing .dot {{ width: 10px; height: 10px; border-radius: 50%; background: #10b981; flex-shrink: 0; animation: pulse 1.6s ease-in-out infinite; }}
+  @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.35; }} }}
+  .now-playing .text {{ font-size: 14px; color: #065f46; }}
+  .now-playing .text b {{ color: #064e3b; }}
   .queue-summary {{ background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   .queue-summary h2 {{ margin: 0 0 4px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }}
   .queue-summary .big {{ font-size: 32px; font-weight: 700; }}
@@ -259,6 +297,8 @@ def build_html(d):
 <div class="container">
   <div class="emoji-strip">{d["emoji_header"]}</div>
   <div class="headline">That papa is {q["days_behind_fmt"]} days behind the times &mdash; Grade: <span class="grade-badge">{q["grade"]}</span> 🎧</div>
+
+  {now_playing_html}
 
   <div class="queue-summary">
     <h2>Unplayed Queue</h2>

@@ -1,4 +1,4 @@
-import sqlite3, datetime, json, os, sys, random, glob
+import sqlite3, datetime, json, os, sys, random, glob, subprocess
 from zoneinfo import ZoneInfo
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -108,6 +108,48 @@ def fmt_days_fraction(days):
         quarter = 0
     symbols = {0: "", 0.25: " ¼", 0.5: " ½", 0.75: " ¾"}
     return f"{whole}{symbols.get(quarter, '')}"
+
+
+def get_now_playing():
+    """Queries macOS's system-wide Now Playing info (via the `nowplaying-cli`
+    Homebrew tool, a thin wrapper around the private MediaRemote framework)
+    for whatever's actively playing. Returns None unless Podcasts.app itself
+    is the current player and it's actually playing (not just paused) —
+    the SQLite library alone can't tell us that, only playhead position."""
+    try:
+        result = subprocess.run(
+            ["nowplaying-cli", "get-raw"], capture_output=True, text=True, timeout=3
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        info = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+    if info.get("kMRMediaRemoteNowPlayingInfoClientBundleIdentifier") != "com.apple.podcasts":
+        return None
+    if (info.get("kMRMediaRemoteNowPlayingInfoPlaybackRate") or 0) <= 0:
+        return None
+
+    title = info.get("kMRMediaRemoteNowPlayingInfoTitle")
+    if not title:
+        return None
+    duration = info.get("kMRMediaRemoteNowPlayingInfoDuration") or 0
+    elapsed = info.get("kMRMediaRemoteNowPlayingInfoElapsedTime") or 0
+    remaining = max(duration - elapsed, 0)
+
+    return {
+        "title": title,
+        "podcast": info.get("kMRMediaRemoteNowPlayingInfoArtist") or "",
+        "elapsed_seconds": elapsed,
+        "duration_seconds": duration,
+        "elapsed_fmt": fmt_duration(elapsed),
+        "duration_fmt": fmt_duration(duration),
+        "remaining_fmt": fmt_duration(remaining),
+    }
 
 def connect():
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
@@ -257,6 +299,7 @@ def main():
                 "total_seconds": v["total_seconds"], "total_fmt": fmt_duration(v["total_seconds"])}
             for k, v in windows.items()
         },
+        "now_playing": get_now_playing(),
         "emoji_header": emoji_header(),
         "config": {
             "email": REPORT_EMAIL,
