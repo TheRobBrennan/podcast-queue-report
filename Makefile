@@ -2,7 +2,7 @@ SHELL := /bin/bash
 PYTHON ?= python3
 RUN_JSON ?= /tmp/podcast_run.json
 
-.PHONY: help setup run chat sms email html open all unlock commit clean
+.PHONY: help setup run chat sms email html open all discord unlock commit clean
 
 help:
 	@echo "Podcast Queue Report — available commands:"
@@ -15,6 +15,7 @@ help:
 	@echo "  make html              Regenerate reports/podcast_report.html"
 	@echo "  make open              Regenerate the HTML report and open it in your browser"
 	@echo "  make all               Run once, then chat + sms + email + html"
+	@echo "  make discord           Post the chat summary to Discord (needs DISCORD_WEBHOOK_URL in .env)"
 	@echo "  make unlock            Clear stale git lock files (see scripts/git_unlock.py)"
 	@echo "  make commit MSG='...'  Unlock, stage everything, and commit"
 	@echo "  make clean             Remove the scratch $(RUN_JSON) file"
@@ -50,6 +51,9 @@ open: html
 	open reports/podcast_report.html
 
 all: chat sms email html
+
+discord: run
+	$(PYTHON) render_report.py $(RUN_JSON) chat | $(PYTHON) scripts/post_discord.py
 
 unlock:
 	$(PYTHON) scripts/git_unlock.py

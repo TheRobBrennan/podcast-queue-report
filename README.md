@@ -55,6 +55,7 @@ agent working in this repo. Run `make help` any time for the full list.
 | `make sms` | Prints the SMS text |
 | `make email` | Prints the email `SUBJECT:` + body |
 | `make html` | Regenerates `reports/podcast_report.html` |
+| `make discord` | Posts the chat summary to Discord via webhook (needs `DISCORD_WEBHOOK_URL` in `.env`) |
 | `make open` | Regenerates the HTML report and opens it in your default browser (macOS `open`) |
 | `make all` | Runs the query once, then renders chat + sms + email + html |
 | `make unlock` | Clears stale git lock files (see "Git on a FUSE-backed folder" below) |
