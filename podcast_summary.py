@@ -1,20 +1,52 @@
 import sqlite3, datetime, json, os, sys, random, glob
 from zoneinfo import ZoneInfo
 
-DB_PATH = "/sessions/gallant-vigilant-albattani/mnt/Documents/MTLibrary.sqlite"
-LOCAL_TZ = ZoneInfo("America/Los_Angeles")  # confirmed via Mac menu bar clock on 2026-08-15
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def _find_workspace_folder():
-    # The connected " Podcasts" workspace folder may contain a non-ASCII
-    # leading character depending on how it was named on disk; resolve it
-    # dynamically instead of hardcoding the exact bytes.
-    mnt = "/sessions/gallant-vigilant-albattani/mnt"
-    for name in os.listdir(mnt):
-        if name.strip().endswith("Podcasts") and name != "Documents":
-            return os.path.join(mnt, name)
-    return os.path.join(mnt, "outputs")  # fallback
+def _load_dotenv():
+    """Minimal .env loader (no external dependency). Reads KEY=VALUE lines
+    from a .env file next to this script and sets them in os.environ,
+    without overriding any variable already set in the real environment."""
+    env_path = os.path.join(SCRIPT_DIR, ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
 
-STATE_PATH = os.path.join(_find_workspace_folder(), ".podcast_skill_state.json")
+_load_dotenv()
+
+def _resolve_db_path():
+    env_path = os.environ.get("PODCASTS_DB_PATH")
+    if env_path and os.path.exists(os.path.expanduser(env_path)):
+        return os.path.expanduser(env_path)
+    standard = os.path.expanduser(
+        "~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/MTLibrary.sqlite"
+    )
+    if os.path.exists(standard):
+        return standard
+    # Fallback for Claude Cowork's sandboxed bash, where the real Mac path
+    # above isn't directly reachable and the folder is bind-mounted instead.
+    for candidate in glob.glob("/sessions/*/mnt/Documents/MTLibrary.sqlite"):
+        return candidate
+    return standard  # doesn't exist; downstream sqlite3.connect will raise clearly
+
+DB_PATH = _resolve_db_path()
+LOCAL_TZ = ZoneInfo(os.environ.get("REPORT_TIMEZONE", "UTC"))
+REPORT_EMAIL = os.environ.get("REPORT_EMAIL", "")
+REPORT_PHONE = os.environ.get("REPORT_PHONE", "")
+REPORT_SIGNOFF_NAME = os.environ.get("REPORT_SIGNOFF_NAME", "")
+REPORT_LABEL = os.environ.get("REPORT_LABEL", "Podcasts Report")
+REPORT_EMAIL_CLIENT = os.environ.get("REPORT_EMAIL_CLIENT", "")
+
+STATE_PATH = os.path.join(SCRIPT_DIR, ".podcast_skill_state.json")
 CORE_DATA_EPOCH = 978307200
 
 def cd_to_dt(v):
@@ -57,7 +89,10 @@ def fmt_duration(seconds):
             label = name if value == 1 else (f"{name}s" if name != "hr" else "hrs")
             if name == "hr":
                 label = "hr" if value == 1 else "hrs"
-            parts.append(f"{value} {label}")
+            # Non-breaking space between the number and its unit so a line
+            # wrap never lands mid-pair (e.g. "1" alone on one line, "hr" on
+            # the next) — wraps can still happen *between* unit groups.
+            parts.append(f"{fmt_num(value)} {label}")
     return " ".join(parts)
 
 def fmt_num(n):
@@ -223,6 +258,14 @@ def main():
             for k, v in windows.items()
         },
         "emoji_header": emoji_header(),
+        "config": {
+            "email": REPORT_EMAIL,
+            "phone": REPORT_PHONE,
+            "signoff_name": REPORT_SIGNOFF_NAME,
+            "label": REPORT_LABEL,
+            "email_client": REPORT_EMAIL_CLIENT,
+            "timezone": os.environ.get("REPORT_TIMEZONE", "UTC"),
+        },
     }
 
     print(json.dumps(result, indent=2))
