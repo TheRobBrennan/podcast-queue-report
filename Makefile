@@ -56,6 +56,7 @@ commit: unlock
 		exit 1; \
 	fi
 	git add -A
+	@$(PYTHON) scripts/git_unlock.py > /dev/null
 	git commit -m "$(MSG)"
 
 clean:
