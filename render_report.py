@@ -67,7 +67,7 @@ def build_discord(d):
     lines.append("**Played**")
     for key, label in PLAYED_LABELS:
         if key in p:
-            lines.append(f'- {label}: {pluralize(p[key]["count"], "ep", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
+            lines.append(f'- **{label}:** {pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
     return "\n".join(lines)
 
 def build_sms(d):
