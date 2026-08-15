@@ -17,14 +17,16 @@ for how many days behind the oldest unplayed episode is.
 ```bash
 git clone <this-repo-url> "podcast-queue-report"
 cd podcast-queue-report
-cp .env.example .env
-# edit .env with your own timezone, email, phone, etc.
-python3 podcast_summary.py > /tmp/run.json
-python3 render_report.py /tmp/run.json chat
+make setup          # copies .env.example -> .env
+# now edit .env with your own timezone, email, phone, etc.
+make chat            # first run — prints the chat summary
 ```
 
 No external Python dependencies are required (standard library only,
-including a minimal built-in `.env` loader).
+including a minimal built-in `.env` loader). `make` is preinstalled on
+macOS (via Xcode Command Line Tools) — if `make setup` says "command not
+found," run `xcode-select --install` first, or just do the two steps by
+hand: `cp .env.example .env`, then edit it.
 
 ### Using this as a Claude Code skill
 
@@ -40,6 +42,42 @@ To let Claude (via Claude Code or Claude Cowork) run this on your behalf:
    `~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/`
    and to this repo's folder.
 
+## Quick commands (Makefile)
+
+This is the recommended way to run everything — for both humans and an AI
+agent working in this repo. Run `make help` any time for the full list.
+
+| Command | What it does |
+|---|---|
+| `make setup` | First-time setup: copies `.env.example` to `.env` |
+| `make run` | Queries the Podcasts DB once, writes `/tmp/podcast_run.json` |
+| `make chat` | Prints the chat summary |
+| `make sms` | Prints the SMS text |
+| `make email` | Prints the email `SUBJECT:` + body |
+| `make html` | Regenerates `reports/podcast_report.html` |
+| `make all` | Runs the query once, then renders chat + sms + email + html |
+| `make unlock` | Clears stale git lock files (see "Git on a FUSE-backed folder" below) |
+| `make commit MSG='...'` | Unlocks, stages everything, commits |
+| `make clean` | Removes the scratch `/tmp/podcast_run.json` file |
+
+`chat`/`sms`/`email`/`html` each depend on `run`, so calling any one of them
+alone re-queries the database fresh; `make all` only queries once and reuses
+that same snapshot for all four renders (important, since each run also
+advances the "since last check" stats window — you don't want `make all` to
+silently zero that out by running the query four times in a row).
+
+### Running the underlying scripts directly
+
+The Makefile is a thin wrapper — you can always call the Python directly:
+
+```bash
+python3 podcast_summary.py > /tmp/run.json
+python3 render_report.py /tmp/run.json chat   # plain-text chat summary
+python3 render_report.py /tmp/run.json sms    # short SMS text
+python3 render_report.py /tmp/run.json email  # SUBJECT: ... / body
+python3 render_report.py /tmp/run.json html > reports/podcast_report.html
+```
+
 ## Files
 
 - `podcast_summary.py` — queries the Podcasts SQLite database, computes the
@@ -51,6 +89,10 @@ To let Claude (via Claude Code or Claude Cowork) run this on your behalf:
 - `render_report.py` — renders that JSON into a chat summary, SMS text, email
   (subject + body), or a styled standalone HTML report.
 - `reports/podcast_report.html` — the most recently generated HTML report.
+- `Makefile` — convenience commands wrapping the two scripts above; see
+  "Quick commands" below.
+- `scripts/git_unlock.py` — clears stale git lock files on filesystems that
+  block deletes; see "Git on a FUSE-backed folder" below.
 - `.env.example` — template for the environment variables below. Copy to
   `.env` (gitignored) and fill in your own values.
 - `.podcast_skill_state.json` (gitignored, local only) — tracks the last run
@@ -70,16 +112,6 @@ To let Claude (via Claude Code or Claude Cowork) run this on your behalf:
 | `REPORT_PHONE` | Delivery phone number | (none) |
 | `REPORT_LABEL` | Prefix used to build the email subject line | `Podcast Queue Report` |
 | `REPORT_EMAIL_CLIENT` | Which email client to use (informational, read by the Claude skill) | (none) |
-
-## Usage
-
-```bash
-python3 podcast_summary.py > /tmp/run.json
-python3 render_report.py /tmp/run.json chat   # plain-text chat summary
-python3 render_report.py /tmp/run.json sms    # short SMS text
-python3 render_report.py /tmp/run.json email  # SUBJECT: ... / body
-python3 render_report.py /tmp/run.json html > reports/podcast_report.html
-```
 
 ## Grading scale
 
@@ -104,6 +136,23 @@ Delivery (email/text) is handled by an AI agent driving the Mac's UI (Mail,
 Outlook, Messages, etc.), not by this code — see `SKILL.md`. It always
 requires explicit user go-ahead before sending anything, even on an
 automated schedule.
+
+## Git on a FUSE-backed folder
+
+If this repo lives on a filesystem that allows renames but rejects deletes
+(this happened with a Cowork-mounted folder during development — `unlink()`
+fails with `EPERM` even though `rename()` works fine), plain git commands
+can start failing with things like:
+
+```
+fatal: Unable to create '.../.git/index.lock': File exists.
+```
+
+That's git leaving lock/tmp files behind because it couldn't clean up after
+itself. Run `make unlock` (or `python3 scripts/git_unlock.py` directly) to
+clear them, or just use `make commit MSG='...'`, which unlocks first
+automatically. This is a no-op and harmless to run on a normal filesystem —
+skip this entirely if you're not hitting the error above.
 
 ## Known caveats
 
