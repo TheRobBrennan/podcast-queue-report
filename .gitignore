@@ -1,3 +1,4 @@
 .podcast_skill_state.json
 __pycache__/
 *.pyc
+.podcast-skill/
