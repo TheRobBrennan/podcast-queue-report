@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .podcast-skill/
 .env
+*.bak
+*.stale

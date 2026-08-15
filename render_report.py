@@ -25,6 +25,12 @@ def pluralize(n, noun, n_fmt=None):
     disp = n_fmt if n_fmt is not None else n
     return f"{disp} {noun}" if n == 1 else f"{disp} {noun}s"
 
+def fmt_days_decimal(days):
+    """e.g. 2.5 -> '2.5', 3.0 -> '3' — used for the email subject line."""
+    if abs(days - round(days)) < 0.01:
+        return str(int(round(days)))
+    return f"{days:.1f}"
+
 def up_next_sentence(q):
     if not q["episodes"]:
         return "The queue is empty — you're all caught up!"
@@ -57,8 +63,8 @@ def build_sms(d):
 def build_email(d):
     q = d["queue"]
     p = d["played"]
-    label = d.get("config", {}).get("label") or "Podcasts Report"
-    subject = f'{label} - Grade {q["grade"]} ({q["days_behind_fmt"]} days behind)'
+    label = d.get("config", {}).get("label") or "Podcast Queue Report"
+    subject = f'{label} — Grade {q["grade"]} ({fmt_days_decimal(q["days_behind"])} days behind)'
     lines = []
     lines.append(d["emoji_header"])
     lines.append(f'That papa is {q["days_behind_fmt"]} days behind the times — Grade: {q["grade"]} 🎧')

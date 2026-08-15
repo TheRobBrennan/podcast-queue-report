@@ -68,7 +68,7 @@ To let Claude (via Claude Code or Claude Cowork) run this on your behalf:
 | `REPORT_SIGNOFF_NAME` | Name used in the email sign-off | (omitted if unset) |
 | `REPORT_EMAIL` | Delivery email address | (none) |
 | `REPORT_PHONE` | Delivery phone number | (none) |
-| `REPORT_LABEL` | Prefix used to build the email subject line | `Podcasts Report` |
+| `REPORT_LABEL` | Prefix used to build the email subject line | `Podcast Queue Report` |
 | `REPORT_EMAIL_CLIENT` | Which email client to use (informational, read by the Claude skill) | (none) |
 
 ## Usage
