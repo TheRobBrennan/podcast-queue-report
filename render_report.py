@@ -54,6 +54,22 @@ def build_chat_summary(d):
             lines.append(f'  {label}: {pluralize(p[key]["count"], "ep", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
     return "\n".join(lines)
 
+def build_discord(d):
+    q = d["queue"]
+    p = d["played"]
+    lines = []
+    lines.append(f'{d["emoji_header"]}')
+    lines.append(f'**Podcast Queue Report** — Grade **{q["grade"]}**, {q["days_behind_fmt"]} days behind 🎧')
+    lines.append("")
+    lines.append(f'**Up next:** "{q["episodes"][0]["title"]}"' if q["episodes"] else "**Up next:** queue is empty — you're all caught up!")
+    lines.append(f'**In queue:** {pluralize(q["count"], "episode", q["count_fmt"])}, {q["total_fmt"]} total')
+    lines.append("")
+    lines.append("**Played**")
+    for key, label in PLAYED_LABELS:
+        if key in p:
+            lines.append(f'- {label}: {pluralize(p[key]["count"], "ep", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
+    return "\n".join(lines)
+
 def build_sms(d):
     q = d["queue"]
     return (f'{d["emoji_header"]}\n'
@@ -209,6 +225,8 @@ if __name__ == "__main__":
         print(build_chat_summary(data))
     elif mode == "sms":
         print(build_sms(data))
+    elif mode == "discord":
+        print(build_discord(data))
     elif mode == "email":
         subject, body = build_email(data)
         print(f"SUBJECT: {subject}")

@@ -53,7 +53,7 @@ open: html
 all: chat sms email html
 
 discord: run
-	$(PYTHON) render_report.py $(RUN_JSON) chat | $(PYTHON) scripts/post_discord.py
+	$(PYTHON) render_report.py $(RUN_JSON) discord | $(PYTHON) scripts/post_discord.py
 
 unlock:
 	$(PYTHON) scripts/git_unlock.py
