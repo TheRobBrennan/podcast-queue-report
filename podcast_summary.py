@@ -110,12 +110,16 @@ def fmt_days_fraction(days):
     return f"{whole}{symbols.get(quarter, '')}"
 
 
-def get_now_playing():
+def get_now_playing(cur):
     """Queries macOS's system-wide Now Playing info (via the `nowplaying-cli`
     Homebrew tool, a thin wrapper around the private MediaRemote framework)
     for whatever's actively playing. Returns None unless Podcasts.app itself
     is the current player and it's actually playing (not just paused) —
-    the SQLite library alone can't tell us that, only playhead position."""
+    the SQLite library alone can't tell us that, only playhead position.
+
+    nowplaying-cli doesn't give us store links, so once we have a title we
+    look the episode back up in the library (same title+podcast join used
+    elsewhere) purely to grab its episode_url/podcast_url for display."""
     try:
         result = subprocess.run(
             ["nowplaying-cli", "get-raw"], capture_output=True, text=True, timeout=3
@@ -137,13 +141,30 @@ def get_now_playing():
     title = info.get("kMRMediaRemoteNowPlayingInfoTitle")
     if not title:
         return None
+    podcast = info.get("kMRMediaRemoteNowPlayingInfoArtist") or ""
     duration = info.get("kMRMediaRemoteNowPlayingInfoDuration") or 0
     elapsed = info.get("kMRMediaRemoteNowPlayingInfoElapsedTime") or 0
     remaining = max(duration - elapsed, 0)
 
+    episode_url = None
+    podcast_url = None
+    cur.execute(
+        "select p.ZSTORECLEANURL, e.ZSTORETRACKID "
+        "from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK "
+        "where e.ZTITLE = ? and p.ZTITLE = ? limit 1",
+        (title, podcast),
+    )
+    row = cur.fetchone()
+    if row:
+        pod_url, track_id = row
+        podcast_url = pod_url
+        episode_url = f"{pod_url}?i={int(track_id)}" if pod_url and track_id else pod_url
+
     return {
         "title": title,
-        "podcast": info.get("kMRMediaRemoteNowPlayingInfoArtist") or "",
+        "podcast": podcast,
+        "episode_url": episode_url,
+        "podcast_url": podcast_url,
         "elapsed_seconds": elapsed,
         "duration_seconds": duration,
         "elapsed_fmt": fmt_duration(elapsed),
@@ -299,7 +320,7 @@ def main():
                 "total_seconds": v["total_seconds"], "total_fmt": fmt_duration(v["total_seconds"])}
             for k, v in windows.items()
         },
-        "now_playing": get_now_playing(),
+        "now_playing": get_now_playing(cur),
         "emoji_header": emoji_header(),
         "config": {
             "email": REPORT_EMAIL,

@@ -10,38 +10,20 @@ PLAYED_LABELS = [
 ]
 
 
-_SHORT_DURATION_UNITS = [
-    ("year", 365 * 86400),
-    ("month", 30 * 86400),
-    ("week", 7 * 86400),
-    ("day", 86400),
-    ("hr", 3600),
-    ("min", 60),
-    ("second", 1),
-]
-
-def fmt_duration_short(seconds, max_units=2):
-    """Same breakdown as podcast_summary.fmt_duration, but caps at the
-    `max_units` biggest non-zero units instead of spelling out every unit
-    down to seconds — e.g. "2 weeks 1 day" instead of "2 weeks 1 day 21 hrs
-    42 mins 17 seconds". Discord embed fields are small and card-like, so
-    the long form wraps awkwardly."""
-    seconds = int(round(seconds or 0))
-    if seconds <= 0:
-        return "0 seconds"
-    parts = []
-    remaining = seconds
-    for name, size in _SHORT_DURATION_UNITS:
-        if len(parts) >= max_units:
-            break
-        value = remaining // size
-        remaining -= value * size
-        if value > 0:
-            label = name if value == 1 else (f"{name}s" if name != "hr" else "hrs")
-            if name == "hr":
-                label = "hr" if value == 1 else "hrs"
-            parts.append(f"{value:,} {label}")
-    return " ".join(parts)
+def wrap_duration(total_fmt, units_per_line=2):
+    """Groups an already-formatted duration string (e.g. "1 year 1 week 1
+    day 9 hrs 25 mins 28 seconds", from podcast_summary.fmt_duration) into
+    lines of at most `units_per_line` unit-pairs each, joined with real
+    line breaks — full precision kept, just wrapped instead of trailing off
+    into one long line. Each "N\u00a0unit" pair uses a non-breaking space
+    internally (never split mid-pair); only the plain space *between*
+    pairs is a valid break point, which is exactly what str.split(" ")
+    respects here."""
+    pairs = total_fmt.split(" ")
+    return "\n".join(
+        " ".join(pairs[i:i + units_per_line])
+        for i in range(0, len(pairs), units_per_line)
+    )
 
 GRADE_COLORS = {
     "A+": 0x0d9488, "A": 0x0d9488, "A-": 0x16a34a,
@@ -107,34 +89,44 @@ def build_chat_summary(d):
             lines.append(f'  {label}: {pluralize(p[key]["count"], "ep", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
     return "\n".join(lines)
 
+def _discord_link(text, url):
+    """Discord markdown link, or plain text if there's nowhere to link to."""
+    return f'[{text}]({url})' if url else text
+
 def build_discord(d):
     """Returns a full Discord webhook payload (dict) with an embed laid out
     like the HTML report's stat cards: a queue summary field up top, then
-    one card-style field per Played window, using short (2-unit) durations
-    so long spans like "All time" don't wrap into a wall of text."""
+    one card-style field per Played window. Durations keep full precision
+    (podcast_summary.fmt_duration's complete breakdown) but wrap at two
+    unit-pairs per line via wrap_duration so long spans like "All time"
+    stay readable instead of trailing off in one long line."""
     q = d["queue"]
     p = d["played"]
 
     description = f'Grade **{q["grade"]}** — {q["days_behind_fmt"]} days behind 🎧\n\n'
     np = d.get("now_playing")
     if np:
-        where = f' — {np["podcast"]}' if np["podcast"] else ""
-        description += f'🟢 **Now playing:** "{np["title"]}"{where} ({np["remaining_fmt"]} left)\n\n'
+        title_link = _discord_link(f'"{np["title"]}"', np.get("episode_url"))
+        where = f' — {_discord_link(np["podcast"], np.get("podcast_url"))}' if np["podcast"] else ""
+        description += f'🟢 **Now playing:** {title_link}{where} ({np["remaining_fmt"]} left)\n\n'
     if q["episodes"]:
-        description += f'**Up next:** "{q["episodes"][0]["title"]}"'
+        ep = q["episodes"][0]
+        title_link = _discord_link(f'"{ep["title"]}"', ep.get("episode_url"))
+        where = f' — {_discord_link(ep["podcast"], ep.get("podcast_url"))}' if ep.get("podcast") else ""
+        description += f'**Up next:** {title_link}{where}'
     else:
         description += "**Up next:** queue is empty — you're all caught up!"
 
     fields = [{
         "name": "In queue",
-        "value": f'{pluralize(q["count"], "episode", q["count_fmt"])}\n{fmt_duration_short(q["total_seconds"])}',
+        "value": f'{pluralize(q["count"], "episode", q["count_fmt"])}\n{wrap_duration(q["total_fmt"])}',
         "inline": True,
     }]
     for key, label in PLAYED_LABELS:
         if key in p:
             fields.append({
                 "name": label,
-                "value": f'{pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}\n{fmt_duration_short(p[key]["total_seconds"])}',
+                "value": f'{pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}\n{wrap_duration(p[key]["total_fmt"])}',
                 "inline": True,
             })
 
@@ -242,10 +234,16 @@ def build_html(d):
 
     np = d.get("now_playing")
     if np:
+        title_html = html.escape(np["title"])
+        if np.get("episode_url"):
+            title_html = f'<a href="{html.escape(np["episode_url"])}" target="_blank">{title_html}</a>'
+        podcast_html = html.escape(np["podcast"]) if np["podcast"] else ""
+        if podcast_html and np.get("podcast_url"):
+            podcast_html = f'<a href="{html.escape(np["podcast_url"])}" target="_blank">{podcast_html}</a>'
         now_playing_html = (
             '<div class="now-playing"><span class="dot"></span>'
-            f'<span class="text">&#9654;&#65039; <b>Now playing:</b> {html.escape(np["title"])}'
-            + (f' &mdash; {html.escape(np["podcast"])}' if np["podcast"] else "")
+            f'<span class="text">&#9654;&#65039; <b>Now playing:</b> {title_html}'
+            + (f' &mdash; {podcast_html}' if podcast_html else "")
             + f' ({np["remaining_fmt"]} left)</span></div>'
         )
     else:
