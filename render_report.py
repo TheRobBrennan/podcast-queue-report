@@ -9,6 +9,47 @@ PLAYED_LABELS = [
     ("all_time", "All time"),
 ]
 
+
+_SHORT_DURATION_UNITS = [
+    ("year", 365 * 86400),
+    ("month", 30 * 86400),
+    ("week", 7 * 86400),
+    ("day", 86400),
+    ("hr", 3600),
+    ("min", 60),
+    ("second", 1),
+]
+
+def fmt_duration_short(seconds, max_units=2):
+    """Same breakdown as podcast_summary.fmt_duration, but caps at the
+    `max_units` biggest non-zero units instead of spelling out every unit
+    down to seconds — e.g. "2 weeks 1 day" instead of "2 weeks 1 day 21 hrs
+    42 mins 17 seconds". Discord embed fields are small and card-like, so
+    the long form wraps awkwardly."""
+    seconds = int(round(seconds or 0))
+    if seconds <= 0:
+        return "0 seconds"
+    parts = []
+    remaining = seconds
+    for name, size in _SHORT_DURATION_UNITS:
+        if len(parts) >= max_units:
+            break
+        value = remaining // size
+        remaining -= value * size
+        if value > 0:
+            label = name if value == 1 else (f"{name}s" if name != "hr" else "hrs")
+            if name == "hr":
+                label = "hr" if value == 1 else "hrs"
+            parts.append(f"{value:,} {label}")
+    return " ".join(parts)
+
+GRADE_COLORS = {
+    "A+": 0x0d9488, "A": 0x0d9488, "A-": 0x16a34a,
+    "B+": 0x65a30d, "B": 0xca8a04, "B-": 0xd97706,
+    "C+": 0xea580c, "C": 0xea580c, "C-": 0xdc2626,
+    "D+": 0xdc2626, "D": 0xb91c1c, "D-": 0x991b1b, "F": 0x7f1d1d,
+}
+
 def local_tz(d):
     # Timezone comes from the JSON's config (itself sourced from the
     # REPORT_TIMEZONE env var / .env in podcast_summary.py), so both scripts
@@ -55,20 +96,41 @@ def build_chat_summary(d):
     return "\n".join(lines)
 
 def build_discord(d):
+    """Returns a full Discord webhook payload (dict) with an embed laid out
+    like the HTML report's stat cards: a queue summary field up top, then
+    one card-style field per Played window, using short (2-unit) durations
+    so long spans like "All time" don't wrap into a wall of text."""
     q = d["queue"]
     p = d["played"]
-    lines = []
-    lines.append(f'{d["emoji_header"]}')
-    lines.append(f'**Podcast Queue Report** — Grade **{q["grade"]}**, {q["days_behind_fmt"]} days behind 🎧')
-    lines.append("")
-    lines.append(f'**Up next:** "{q["episodes"][0]["title"]}"' if q["episodes"] else "**Up next:** queue is empty — you're all caught up!")
-    lines.append(f'**In queue:** {pluralize(q["count"], "episode", q["count_fmt"])}, {q["total_fmt"]} total')
-    lines.append("")
-    lines.append("**Played**")
+
+    description = f'Grade **{q["grade"]}** — {q["days_behind_fmt"]} days behind 🎧\n\n'
+    if q["episodes"]:
+        description += f'**Up next:** "{q["episodes"][0]["title"]}"'
+    else:
+        description += "**Up next:** queue is empty — you're all caught up!"
+
+    fields = [{
+        "name": "In queue",
+        "value": f'{pluralize(q["count"], "episode", q["count_fmt"])}\n{fmt_duration_short(q["total_seconds"])}',
+        "inline": True,
+    }]
     for key, label in PLAYED_LABELS:
         if key in p:
-            lines.append(f'- **{label}:** {pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
-    return "\n".join(lines)
+            fields.append({
+                "name": label,
+                "value": f'{pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}\n{fmt_duration_short(p[key]["total_seconds"])}',
+                "inline": True,
+            })
+
+    embed = {
+        "title": f'{d["emoji_header"]}',
+        "description": description,
+        "color": GRADE_COLORS.get(q["grade"], 0x334155),
+        "fields": fields,
+        "footer": {"text": "Podcast Queue Report"},
+        "timestamp": d["generated_at"],
+    }
+    return {"embeds": [embed]}
 
 def build_sms(d):
     q = d["queue"]
@@ -226,7 +288,7 @@ if __name__ == "__main__":
     elif mode == "sms":
         print(build_sms(data))
     elif mode == "discord":
-        print(build_discord(data))
+        print(json.dumps(build_discord(data)))
     elif mode == "email":
         subject, body = build_email(data)
         print(f"SUBJECT: {subject}")

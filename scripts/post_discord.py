@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Post the chat summary (read from stdin) to a Discord channel via webhook.
+Post a report to a Discord channel via webhook. Reads a webhook payload
+from stdin — either a JSON object (used as-is, e.g. an {"embeds": [...]}
+payload from `render_report.py ... discord`) or plain text (wrapped as
+{"content": ...}, truncated to Discord's 2000-char message cap).
 
 Reads DISCORD_WEBHOOK_URL from .env (same minimal loader pattern as
-podcast_summary.py — never hardcode the URL here). Discord messages cap out
-at 2000 chars; longer input gets truncated with a note rather than failing
-the run.
+podcast_summary.py — never hardcode the URL here).
 
 Usage:
-    python3 render_report.py /tmp/podcast_run.json chat | python3 scripts/post_discord.py
+    python3 render_report.py /tmp/podcast_run.json discord | python3 scripts/post_discord.py
     make discord
 """
 import json
@@ -43,14 +44,22 @@ def main():
         print("DISCORD_WEBHOOK_URL not set in .env — skipping Discord post.", file=sys.stderr)
         sys.exit(1)
 
-    content = sys.stdin.read().strip()
-    if not content:
+    raw = sys.stdin.read().strip()
+    if not raw:
         print("Nothing to post (empty input).", file=sys.stderr)
         sys.exit(1)
-    if len(content) > DISCORD_LIMIT:
-        content = content[: DISCORD_LIMIT - 20].rstrip() + "\n… (truncated)"
 
-    body = json.dumps({"content": content}).encode("utf-8")
+    try:
+        payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            raise ValueError
+    except ValueError:
+        content = raw
+        if len(content) > DISCORD_LIMIT:
+            content = content[: DISCORD_LIMIT - 20].rstrip() + "\n… (truncated)"
+        payload = {"content": content}
+
+    body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         webhook_url,
         data=body,
