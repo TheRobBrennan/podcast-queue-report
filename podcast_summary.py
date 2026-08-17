@@ -1,4 +1,4 @@
-import sqlite3, datetime, json, os, sys, random, glob, subprocess
+import sqlite3, datetime, json, os, sys, glob, subprocess
 from zoneinfo import ZoneInfo
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -277,8 +277,10 @@ def save_state(state):
 EMOJI_POOL = ["🐷","🐰","🚙","🚗","🚐","🚘","🐻","🦈","🐸","🦄","🚁","🐐","🧌","🐵",
               "🦶","🦌","🐘","🦬","🐔","🐓","🏝️"]
 
-def emoji_header(n=15):
-    return "".join(random.choices(EMOJI_POOL, k=n))
+def emoji_header():
+    """Every member of the household, in order, every time — no sampling.
+    The header is the whole cast, so nobody gets left out of a report."""
+    return "".join(EMOJI_POOL)
 
 def main():
     now = datetime.datetime.utcnow()
