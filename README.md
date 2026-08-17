@@ -22,6 +22,10 @@ The generated HTML report:
 
 ![HTML report demo](assets/html-report-demo.gif)
 
+The SMS text, as received:
+
+![SMS report](assets/sms-report.png)
+
 ## Setup
 
 ```bash
