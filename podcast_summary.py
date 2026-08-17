@@ -197,44 +197,103 @@ LATEST_EPISODES_LIMIT = 12
 
 def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
     """Matches Apple's own "Latest Episodes" view: a rolling window of the
-    `limit` most recent unplayed episodes across subscribed podcasts, one
-    per podcast (its single newest unplayed episode), sorted by publish
-    date. Two earlier heuristics were tried and disproven against actual
-    screenshots of the Latest Episodes view:
+    `limit` most recent never-started episodes across subscribed podcasts,
+    one per podcast (its single newest unplayed episode), sorted by publish
+    date — PLUS any episode that has been started but not finished, which
+    stays in the view no matter how far past `limit` its publish date has
+    fallen. Three earlier heuristics were tried and disproven against
+    actual screenshots of the Latest Episodes view:
       1. A 20-hour publish-gap cluster — wrong because shows published well
          over 20h apart were still both present, one per show.
       2. Every unplayed episode, one per podcast, uncapped — wrong because
          it surfaces episodes from long-dormant subscriptions going back
          years; the real view only ever showed the ~12 most recent.
+      3. A flat `limit`-most-recent cap over *all* unplayed episodes —
+         wrong because it dropped a partially-played episode (Analog(ue),
+         "I'm the Big Dog": ZPLAYSTATE=1, playhead 3521s of 4787s) that
+         sat one slot past the cap at 13th-most-recent, while the real
+         view still showed it, pinned at the top of the oldest-first list
+         with its progress bar. The 12 never-started episodes ranked ahead
+         of it were all present too, so it is carried *in addition to* the
+         cap, not counted against it.
+      4. Pinning *every* started-but-unfinished episode — wrong in the
+         other direction. This library holds four abandoned ZPLAYSTATE=1
+         episodes last touched between 5 and 26 months ago (Ghost Story
+         "The House Next Door", Morbid "Listener Tales 83", and two from
+         Feb 2026); none appear in the real view, but pinning them all
+         dragged the oldest item back to Oct 2023 — "2 years 9 months
+         behind", grade F, against the A-/B+ the view actually implies.
     The count of 12 was confirmed by counting forward from a screenshot
     where the *oldest* item at the top of the list (oldest-first sort
     setting) matched exactly the 12th-most-recent unplayed episode across
     all subscribed shows — not a fixed time window, since two slightly
     older unplayed episodes existed just outside that count and were
-    excluded."""
+    excluded.
+
+    So a started episode is pinned only while it is still *active*: its
+    ZLASTDATEPLAYED must be no older than the window the view already
+    covers (the oldest never-started episode in the capped list), with a
+    24-hour floor so an episode paused yesterday survives a day whose new
+    releases are only a few hours old. ZPLAYSTATE alone cannot carry this
+    distinction — all five started episodes here are ZPLAYSTATE=1,
+    including the abandoned ones. ZPLAYSTATESOURCE (9 for the live
+    episode, 3/4 for the stale ones) and ZLISTENNOWEPISODE looked like
+    candidates too, but each matched one stale episode as well, so
+    recency is the only separator this library actually supports.
+
+    Whether Apple's real rule is this pinning behavior or simply a larger
+    cap could not be distinguished from a single library — both fit the
+    observed 13 items — but pinning is the safer of the two, since it also
+    holds when the started episode is far older than the cap window, which
+    is exactly when losing it hurts most (it is the episode driving the
+    "behind" figure and the grade). Re-verify against a screenshot of the
+    real Latest Episodes view if the counts ever look off."""
     now_cd = dt_to_cd(now_dt)
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
-               e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK
+               e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
+               e.ZLASTDATEPLAYED
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
         order by e.ZPUBDATE desc
     ''', (now_cd,))
     rows = cur.fetchall()
-    seen_podcasts = set()
-    queue = []
-    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk in rows:
-        if pod_pk in seen_podcasts:
+
+    fresh = []
+    started = []
+    seen_fresh = set()
+    seen_started = set()
+    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played in rows:
+        is_started = playstate == 1 or (playhead or 0) > 0
+        bucket, seen = (started, seen_started) if is_started else (fresh, seen_fresh)
+        if pod_pk in seen:
             continue
-        seen_podcasts.add(pod_pk)
-        d = cd_to_dt(pub)
+        seen.add(pod_pk)
         episode_url = f"{pod_url}?i={int(track_id)}" if pod_url and track_id else pod_url
-        queue.append({
-            "title": title, "podcast": pod, "duration": dur or 0, "pubdate": d,
-            "playhead": playhead or 0, "episode_url": episode_url, "podcast_url": pod_url,
+        bucket.append({
+            "title": title, "podcast": pod, "duration": dur or 0, "pubdate": cd_to_dt(pub),
+            "playhead": playhead or 0, "in_progress": is_started,
+            "last_played": cd_to_dt(last_played) if last_played else None,
+            "episode_url": episode_url, "podcast_url": pod_url, "podcast_pk": pod_pk,
         })
-        if len(queue) == limit:
-            break
+        # No early break: started episodes can sit past the cap, so the whole
+        # result set is scanned and `fresh` is capped below instead.
+
+    fresh = fresh[:limit]
+    # A started episode stays only while still active — see the docstring.
+    active_cutoff = min(
+        [now_dt - datetime.timedelta(days=1)] + [e["pubdate"] for e in fresh]
+    )
+    active = [
+        e for e in started
+        if e["last_played"] and e["last_played"] >= active_cutoff
+    ]
+
+    # One row per podcast overall, preferring the started episode — that's
+    # the one Podcasts shows (with its progress bar) when a show has both.
+    active_pods = {e["podcast_pk"] for e in active}
+    queue = active + [e for e in fresh if e["podcast_pk"] not in active_pods]
+    queue.sort(key=lambda e: e["pubdate"], reverse=True)
     return queue
 
 def grade_for_days(days_behind):
@@ -252,12 +311,23 @@ def grade_for_days(days_behind):
     return "F"
 
 def get_played_stats(cur, since_dt, until_dt):
+    """Counts episodes *finished* in the window, one row each, crediting the
+    episode's full ZDURATION. ZLASTDATEPLAYED alone is not enough: it also
+    moves when an episode is merely started and paused, so an episode still
+    sitting in the unplayed tab (ZUNPLAYEDTAB=1) has to be excluded or it
+    gets counted as a complete listen. That is not hypothetical — the
+    in-progress Analog(ue) episode was reported as the entire "since last
+    check" figure (1 episode, 1 hr 19 mins 47 seconds) while 21 minutes of
+    it were still unplayed, and it was simultaneously missing from the
+    queue. The unfinished portion of such an episode is credited later,
+    once it is actually finished and leaves the unplayed tab."""
     since_cd = dt_to_cd(since_dt)
     until_cd = dt_to_cd(until_dt)
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZLASTDATEPLAYED
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where p.ZSUBSCRIBED=1 and e.ZLASTDATEPLAYED >= ? and e.ZLASTDATEPLAYED < ?
+          and coalesce(e.ZUNPLAYEDTAB, 0) != 1
         order by e.ZLASTDATEPLAYED desc
     ''', (since_cd, until_cd))
     rows = cur.fetchall()
@@ -352,7 +422,9 @@ def main():
             "episodes": [
                 {"title": e["title"], "podcast": e["podcast"], "duration_fmt": fmt_duration(e["duration"]),
                  "pubdate": e["pubdate"].isoformat(), "episode_url": e["episode_url"],
-                 "podcast_url": e["podcast_url"]}
+                 "podcast_url": e["podcast_url"], "in_progress": e["in_progress"],
+                 "remaining_fmt": fmt_duration(max((e["duration"] or 0) - (e["playhead"] or 0), 0))
+                                  if e["in_progress"] else None}
                 for e in queue_oldest_first
             ],
         },
