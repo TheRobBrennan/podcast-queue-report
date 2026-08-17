@@ -207,10 +207,29 @@ def build_html(d):
         if key in p:
             played_cards += stat_card(label, p[key])
 
+    now_playing_data = d.get("now_playing")
+
+    def _is_now_playing(e):
+        # Prefer matching by episode_url (stable identity from the store
+        # link); title/podcast is only a fallback for episodes with no
+        # store link populated.
+        if not now_playing_data:
+            return False
+        if now_playing_data.get("episode_url") and e.get("episode_url"):
+            return now_playing_data["episode_url"] == e["episode_url"]
+        return (now_playing_data.get("title") == e.get("title")
+                and now_playing_data.get("podcast") == e.get("podcast"))
+
     rows = ""
     for i, e in enumerate(q["episodes"]):
         pub = datetime.datetime.fromisoformat(e["pubdate"]).replace(tzinfo=datetime.timezone.utc).astimezone(local_tz(d))
-        badge = ' <span class="up-next">▶ UP NEXT</span>' if i == 0 else ""
+        is_playing = _is_now_playing(e)
+        if is_playing:
+            badge = ' <span class="now-playing-badge">● NOW PLAYING</span>'
+        elif i == 0:
+            badge = ' <span class="up-next">▶ UP NEXT</span>'
+        else:
+            badge = ""
         title_html = html.escape(e["title"])
         if e.get("episode_url"):
             title_html = f'<a href="{html.escape(e["episode_url"])}" target="_blank">{title_html}</a>'
@@ -218,7 +237,7 @@ def build_html(d):
         if e.get("podcast_url"):
             pod_html = f'<a href="{html.escape(e["podcast_url"])}" target="_blank">{pod_html}</a>'
         rows += f'''
-        <tr class="{"up-next-row" if i == 0 else ""}">
+        <tr class="{"up-next-row" if (i == 0 or is_playing) else ""}">
           <td class="ep-title">{title_html}{badge}<div class="ep-pod">{pod_html}</div></td>
           <td class="ep-date">{pub.strftime("%a %b %-d")}</td>
           <td class="ep-dur">{e["duration_fmt"]}</td>
@@ -286,6 +305,7 @@ def build_html(d):
   .ep-pod a {{ color: #64748b; text-decoration: none; }}
   .ep-pod a:hover {{ text-decoration: underline; }}
   .up-next {{ display: inline-block; background: #dbeafe; color: #1d4ed8; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }}
+  .now-playing-badge {{ display: inline-block; background: #d1fae5; color: #047857; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }}
   .up-next-row {{ background: #f8fafc; }}
   .ep-date, .ep-dur {{ color: #475569; white-space: nowrap; }}
   .footer {{ text-align: center; color: #94a3b8; font-size: 12px; margin-top: 24px; }}
