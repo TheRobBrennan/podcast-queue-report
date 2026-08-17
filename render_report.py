@@ -124,7 +124,7 @@ def build_discord(d):
     q = d["queue"]
     p = d["played"]
 
-    description = f'Grade **{q["grade"]}** — {q["days_behind_phrase"]} 🎧\n\n'
+    description = f'**Grade {q["grade"]}** — {q["days_behind_phrase"]} 🎧\n\n'
     np = d.get("now_playing")
     if np:
         title_link = _discord_link(f'"{np["title"]}"', np.get("episode_url"))
