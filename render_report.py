@@ -143,10 +143,14 @@ def build_discord(d):
 def build_sms(d):
     q = d["queue"]
     now_playing = now_playing_sentence(d)
-    return (f'{d["emoji_header"]}\n'
-            f'That papa is {q["days_behind_fmt"]} days behind the times — Grade: {q["grade"]} 🎧.  '
-            + (f'{now_playing}.  ' if now_playing else "")
-            + f'{up_next_sentence(q)}')
+    if q["episodes"]:
+        queue_line = (f'Unplayed queue: {pluralize(q["count"], "episode", q["count_fmt"])} · {q["total_fmt"]} '
+                      f'— oldest {human_date(d, q["oldest_date"])} ({q["days_behind_fmt"]} days behind)')
+    else:
+        queue_line = "Unplayed queue: empty — you're all caught up!"
+    return (f'{d["emoji_header"]} That papa is {q["days_behind_fmt"]} days behind the times — Grade: {q["grade"]} 🎧.\n\n'
+            + (f'{now_playing}\n' if now_playing else "")
+            + queue_line)
 
 def build_email(d):
     q = d["queue"]
