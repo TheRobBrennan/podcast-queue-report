@@ -117,15 +117,19 @@ def build_discord(d):
     else:
         description += "**Up next:** queue is empty — you're all caught up!"
 
+    field_icons = {
+        "queue": "📥", "since_last_run": "⏱️", "yesterday": "📆",
+        "past_week": "🗓️", "past_month": "📅", "all_time": "⏳",
+    }
     fields = [{
-        "name": "In queue",
+        "name": f'__{field_icons["queue"]} In queue__',
         "value": f'{pluralize(q["count"], "episode", q["count_fmt"])}\n{wrap_duration(q["total_fmt"])}',
         "inline": True,
     }]
     for key, label in PLAYED_LABELS:
         if key in p:
             fields.append({
-                "name": label,
+                "name": f'__{field_icons[key]} {label}__',
                 "value": f'{pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}\n{wrap_duration(p[key]["total_fmt"])}',
                 "inline": True,
             })
