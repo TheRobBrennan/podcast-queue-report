@@ -122,14 +122,14 @@ def build_discord(d):
         "past_week": "🗓️", "past_month": "📅", "all_time": "⏳",
     }
     fields = [{
-        "name": f'{field_icons["queue"]} In queue',
+        "name": f'__{field_icons["queue"]} In queue__',
         "value": f'{pluralize(q["count"], "episode", q["count_fmt"])}\n{wrap_duration(q["total_fmt"])}',
         "inline": True,
     }]
     for key, label in PLAYED_LABELS:
         if key in p:
             fields.append({
-                "name": f'{field_icons.get(key, "")} {label}'.strip(),
+                "name": f'__{field_icons[key]} {label}__',
                 "value": f'{pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}\n{wrap_duration(p[key]["total_fmt"])}',
                 "inline": True,
             })
