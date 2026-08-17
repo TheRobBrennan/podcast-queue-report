@@ -333,6 +333,7 @@ def build_html(d):
   .emoji-strip {{ font-size: 28px; letter-spacing: 2px; text-align: center; margin-bottom: 8px; line-height: 1.4; }}
   .headline {{ text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 28px; }}
   .grade-badge {{ display: inline-block; background: {grade_color}; color: white; border-radius: 8px; padding: 2px 12px; font-weight: 700; }}
+  .grade-line {{ white-space: nowrap; }}
   .now-playing {{ background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 14px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }}
   .now-playing .dot {{ width: 10px; height: 10px; border-radius: 50%; background: #10b981; flex-shrink: 0; animation: pulse 1.6s ease-in-out infinite; }}
   @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.35; }} }}
@@ -369,7 +370,7 @@ def build_html(d):
 <body>
 <div class="container">
   <div class="emoji-strip">{d["emoji_header"]}</div>
-  <div class="headline">{headline(q)} &mdash; Grade: <span class="grade-badge">{q["grade"]}</span> 🎧</div>
+  <div class="headline">{headline(q)} &mdash; <span class="grade-line">Grade: <span class="grade-badge">{q["grade"]}</span> 🎧</span></div>
 
   {now_playing_html}
 
