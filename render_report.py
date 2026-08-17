@@ -48,11 +48,12 @@ def pluralize(n, noun, n_fmt=None):
     disp = n_fmt if n_fmt is not None else n
     return f"{disp} {noun}" if n == 1 else f"{disp} {noun}s"
 
-def fmt_days_decimal(days):
-    """e.g. 2.5 -> '2.5', 3.0 -> '3' — used for the email subject line."""
-    if abs(days - round(days)) < 0.01:
-        return str(int(round(days)))
-    return f"{days:.1f}"
+def headline(q):
+    """The 'That papa is ...' opener, which reads differently when there's
+    nothing left to catch up on."""
+    if q["days_behind_amount"]:
+        return f'That papa is {q["days_behind_amount"]} behind the times'
+    return "That papa is right on time — current as of today"
 
 
 def now_playing_sentence(d):
@@ -75,7 +76,7 @@ def build_chat_summary(d):
     p = d["played"]
     lines = []
     lines.append(d["emoji_header"])
-    lines.append(f'That papa is {q["days_behind_fmt"]} days behind the times — Grade: {q["grade"]} 🎧')
+    lines.append(f'{headline(q)} — Grade: {q["grade"]} 🎧')
     lines.append("")
     now_playing = now_playing_sentence(d)
     if now_playing:
@@ -103,7 +104,7 @@ def build_discord(d):
     q = d["queue"]
     p = d["played"]
 
-    description = f'Grade **{q["grade"]}** — {q["days_behind_fmt"]} days behind 🎧\n\n'
+    description = f'Grade **{q["grade"]}** — {q["days_behind_phrase"]} 🎧\n\n'
     np = d.get("now_playing")
     if np:
         title_link = _discord_link(f'"{np["title"]}"', np.get("episode_url"))
@@ -122,7 +123,7 @@ def build_discord(d):
         "past_week": "🗓️", "past_month": "📅", "all_time": "⏳",
     }
     fields = [{
-        "name": f'__{field_icons["queue"]} In queue__',
+        "name": f'__{field_icons["queue"]} Latest Episodes__',
         "value": f'{pluralize(q["count"], "episode", q["count_fmt"])}\n{wrap_duration(q["total_fmt"])}',
         "inline": True,
     }]
@@ -148,7 +149,7 @@ def build_sms(d):
     q = d["queue"]
     np = d.get("now_playing")
     lines = [d["emoji_header"]]
-    lines.append(f'Grade: {q["grade"]} 🎧  ({q["days_behind_fmt"]} days behind)')
+    lines.append(f'Grade: {q["grade"]} 🎧  ({q["days_behind_phrase"]})')
     lines.append("")
     if np:
         where = f'{np["podcast"]} — ' if np["podcast"] else ""
@@ -156,10 +157,10 @@ def build_sms(d):
         lines.append(f'"{np["title"]}"')
         lines.append(f'{where}{np["remaining_fmt"]} left')
         lines.append("")
-    lines.append("📋 UNPLAYED QUEUE")
+    lines.append("📋 LATEST EPISODES")
     if q["episodes"]:
         lines.append(f'{pluralize(q["count"], "episode", q["count_fmt"])} · {q["total_fmt"]}')
-        lines.append(f'Oldest: {human_date(d, q["oldest_date"])} ({q["days_behind_fmt"]} days behind)')
+        lines.append(f'Oldest: {human_date(d, q["oldest_date"])} ({q["days_behind_phrase"]})')
     else:
         lines.append("Empty — you're all caught up!")
     return "\n".join(lines)
@@ -168,10 +169,10 @@ def build_email(d):
     q = d["queue"]
     p = d["played"]
     label = d.get("config", {}).get("label") or "Podcast Queue Report"
-    subject = f'{label} — Grade {q["grade"]} ({fmt_days_decimal(q["days_behind"])} days behind)'
+    subject = f'{label} — Grade {q["grade"]} ({q["days_behind_phrase"]})'
     lines = []
     lines.append(d["emoji_header"])
-    lines.append(f'That papa is {q["days_behind_fmt"]} days behind the times — Grade: {q["grade"]} 🎧')
+    lines.append(f'{headline(q)} — Grade: {q["grade"]} 🎧')
     lines.append("")
     now_playing = now_playing_sentence(d)
     if now_playing:
@@ -284,6 +285,13 @@ def build_html(d):
     else:
         now_playing_html = ""
 
+    # No oldest episode at all means the queue is empty — there's nothing to
+    # date-stamp, so say so instead of printing an "Oldest:" line.
+    if q["oldest_date"]:
+        oldest_html = f'Oldest: {human_date(d, q["oldest_date"])} ({q["days_behind_phrase"]})'
+    else:
+        oldest_html = "Empty &mdash; you&rsquo;re all caught up!"
+
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -330,14 +338,14 @@ def build_html(d):
 <body>
 <div class="container">
   <div class="emoji-strip">{d["emoji_header"]}</div>
-  <div class="headline">That papa is {q["days_behind_fmt"]} days behind the times &mdash; Grade: <span class="grade-badge">{q["grade"]}</span> 🎧</div>
+  <div class="headline">{headline(q)} &mdash; Grade: <span class="grade-badge">{q["grade"]}</span> 🎧</div>
 
   {now_playing_html}
 
   <div class="queue-summary">
-    <h2>Unplayed Queue</h2>
+    <h2>Latest Episodes</h2>
     <div class="big">{q["count_fmt"]} episodes &middot; {q["total_fmt"]}</div>
-    <div class="sub">Oldest: {human_date(d, q["oldest_date"])} ({q["days_behind_fmt"]} days behind)</div>
+    <div class="sub">{oldest_html}</div>
   </div>
 
   <div class="cards">

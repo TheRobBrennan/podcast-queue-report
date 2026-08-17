@@ -99,15 +99,34 @@ def fmt_num(n):
     return f"{int(n):,}"
 
 def fmt_days_fraction(days):
-    """e.g. 2.53 -> '2 ½' (rounds to nearest quarter day)."""
+    """e.g. 2.53 -> '2 ½', 0.5 -> '½' (rounds to nearest quarter day).
+    Sub-day amounts drop the leading zero so reports read "½ day behind"
+    rather than "0 ½ days behind"."""
     whole = int(days)
     frac = days - whole
     quarter = round(frac * 4) / 4
     if quarter >= 1:
         whole += 1
         quarter = 0
-    symbols = {0: "", 0.25: " ¼", 0.5: " ½", 0.75: " ¾"}
-    return f"{whole}{symbols.get(quarter, '')}"
+    symbols = {0: "", 0.25: "¼", 0.5: "½", 0.75: "¾"}
+    symbol = symbols.get(quarter, "")
+    if whole == 0:
+        return symbol or "0"
+    return f"{whole} {symbol}".strip()
+
+def fmt_days_behind(days, has_queue):
+    """Returns (amount, phrase) for how far behind the oldest unplayed
+    episode is. `amount` is the pluralized span alone ('½ day', '2 ½ days')
+    or None when there's nothing to catch up on; `phrase` is the full
+    ready-to-print form ('½ day behind' / 'current as of today')."""
+    fraction = fmt_days_fraction(days) if has_queue else "0"
+    if fraction == "0":
+        return None, "current as of today"
+    # Singular for exactly one day and for bare fractions of a day ("½ day"),
+    # plural for everything else ("1 ¼ days").
+    singular = fraction == "1" or fraction in ("¼", "½", "¾")
+    amount = f"{fraction} day" if singular else f"{fraction} days"
+    return amount, f"{amount} behind"
 
 
 def get_now_playing(cur):
@@ -295,6 +314,7 @@ def main():
         oldest = None
         days_behind = 0
     grade = grade_for_days(days_behind) if queue else "A+"
+    days_behind_amount, days_behind_phrase = fmt_days_behind(days_behind, bool(queue))
 
     # --- Played stats windows ---
     state = load_state()
@@ -341,6 +361,8 @@ def main():
             "oldest_date": oldest.isoformat() if oldest else None,
             "days_behind": round(days_behind, 2),
             "days_behind_fmt": fmt_days_fraction(days_behind) if queue else "0",
+            "days_behind_amount": days_behind_amount,
+            "days_behind_phrase": days_behind_phrase,
             "grade": grade,
             "up_next_remaining_fmt": fmt_duration(up_next_remaining) if up_next else None,
             "episodes": [
