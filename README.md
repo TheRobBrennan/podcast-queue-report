@@ -22,6 +22,26 @@ The generated HTML report:
 
 ![HTML report demo](assets/html-report.gif)
 
+Grades are color-coded on one continuous green &rarr; yellow &rarr; red
+ramp. Only five anchors are chosen — A+ deep green, A green, C yellow, D
+orange, F red — and every other grade is a linear RGB blend of its
+neighbors, so a +/- step reads as "slightly worse than" rather than as its
+own category:
+
+![Grade badge colors](assets/grade-colors.png)
+
+The same ramp in the report headline, at three points on the scale:
+
+![Grade A headline](assets/grade-headline-a.png)
+![Grade C headline](assets/grade-headline-c.png)
+![Grade F headline](assets/grade-headline-f.png)
+
+Badge text color isn't fixed either — it's derived from each badge's own
+WCAG relative luminance, since white text goes unreadable across the
+yellow/lime middle of the ramp. Regenerate the swatch sheet after any
+palette change with `python3 scripts/make_grade_swatches.py`, which reads
+the colors from `render_report.py` itself rather than re-listing them.
+
 The SMS text, as received:
 
 ![SMS report](assets/sms-report.png)
@@ -126,6 +146,9 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
   "Quick commands" below.
 - `scripts/git_unlock.py` — clears stale git lock files on filesystems that
   block deletes; see "Git on a FUSE-backed folder" below.
+- `scripts/make_grade_swatches.py` — regenerates `assets/grade-colors.png`,
+  the grade color swatch sheet in "In action" above, straight from
+  `render_report.py`'s own palette functions.
 - `.env.example` — template for the environment variables below. Copy to
   `.env` (gitignored) and fill in your own values.
 - `.podcast_skill_state.json` (gitignored, local only) — tracks the last run
