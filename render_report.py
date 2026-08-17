@@ -143,7 +143,7 @@ def build_discord(d):
         "past_week": "🗓️", "past_month": "📅", "all_time": "⏳",
     }
     fields = [{
-        "name": f'__{field_icons["queue"]} Latest Episodes__',
+        "name": f'__{field_icons["queue"]} On Deck__',
         "value": f'{pluralize(q["count"], "episode", q["count_fmt"])}\n{wrap_duration(q["total_fmt"])}',
         "inline": True,
     }]
@@ -177,7 +177,7 @@ def build_sms(d):
         lines.append(f'"{np["title"]}"')
         lines.append(f'{where}{np["remaining_fmt"]} left')
         lines.append("")
-    lines.append("📋 LATEST EPISODES")
+    lines.append("📋 ON DECK")
     if q["episodes"]:
         lines.append(f'{pluralize(q["count"], "episode", q["count_fmt"])} · {q["total_fmt"]}')
         lines.append(f'Oldest: {fmt_relative(d, q["oldest_date"])} ({q["days_behind_phrase"]})')
@@ -364,7 +364,7 @@ def build_html(d):
   {now_playing_html}
 
   <div class="queue-summary">
-    <h2>Latest Episodes</h2>
+    <h2>On Deck</h2>
     <div class="big">{q["count_fmt"]} episodes &middot; {q["total_fmt"]}</div>
     <div class="sub">{oldest_html}</div>
   </div>
