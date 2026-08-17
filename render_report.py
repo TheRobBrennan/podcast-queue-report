@@ -277,7 +277,7 @@ def build_html(d):
         <tr class="{"up-next-row" if (i == 0 or is_playing) else ""}">
           <td class="ep-title">{title_html}{badge}<div class="ep-pod">{pod_html}</div></td>
           <td class="ep-date" title="{pub.strftime("%a %b %-d, %-I:%M%p %Z")}">{fmt_relative(d, e["pubdate"])}</td>
-          <td class="ep-dur">{e["duration_fmt"]}</td>
+          <td class="ep-dur">{e["duration_fmt"]}{f'<div class="ep-left">{e["remaining_fmt"]} left</div>' if e.get("in_progress") and e.get("remaining_fmt") else ""}</td>
         </tr>'''
 
     grade_colors = {
@@ -347,6 +347,7 @@ def build_html(d):
   .ep-title a {{ color: #1e293b; text-decoration: none; }}
   .ep-title a:hover {{ text-decoration: underline; }}
   .ep-pod {{ font-weight: 400; color: #64748b; font-size: 12px; margin-top: 2px; }}
+  .ep-left {{ color: #2563eb; font-size: 12px; margin-top: 2px; }}
   .ep-pod a {{ color: #64748b; text-decoration: none; }}
   .ep-pod a:hover {{ text-decoration: underline; }}
   .up-next {{ display: inline-block; background: #dbeafe; color: #1d4ed8; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }}
