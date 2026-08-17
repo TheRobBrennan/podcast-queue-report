@@ -117,9 +117,20 @@ def get_now_playing(cur):
     is the current player and it's actually playing (not just paused) —
     the SQLite library alone can't tell us that, only playhead position.
 
-    nowplaying-cli doesn't give us store links, so once we have a title we
-    look the episode back up in the library (same title+podcast join used
-    elsewhere) purely to grab its episode_url/podcast_url for display."""
+    nowplaying-cli's title AND elapsed/duration are unreliable for some
+    podcasts (observed with My First Million): the title is a live
+    per-segment/chapter string that changes every few seconds ("Intro —
+    ...", "Hark, a human in a box — ...", "zero constraints — ..." — all
+    for the same episode) and never matches the stored episode title, and
+    kMRMediaRemoteNowPlayingInfoElapsedTime read back as 0 on every poll
+    across several minutes of real playback — it isn't tracking actual
+    position for this kind of chapter-shifting Now Playing info. Once we
+    know which podcast (artist) is playing, we instead look up that
+    podcast's currently-playing episode directly via ZPLAYSTATE=1 to get
+    its stable title, store links, and the library's own ZPLAYHEAD/
+    ZDURATION for elapsed/remaining — nowplaying-cli is only trusted for
+    confirming playback is actually active, and as a fallback if that DB
+    lookup comes up empty."""
     try:
         result = subprocess.run(
             ["nowplaying-cli", "get-raw"], capture_output=True, text=True, timeout=3
@@ -146,22 +157,28 @@ def get_now_playing(cur):
     elapsed = info.get("kMRMediaRemoteNowPlayingInfoElapsedTime") or 0
     remaining = max(duration - elapsed, 0)
 
+    display_title = title
     episode_url = None
     podcast_url = None
     cur.execute(
-        "select p.ZSTORECLEANURL, e.ZSTORETRACKID "
+        "select e.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID, e.ZPLAYHEAD, e.ZDURATION "
         "from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK "
-        "where e.ZTITLE = ? and p.ZTITLE = ? limit 1",
-        (title, podcast),
+        "where p.ZTITLE = ? and e.ZPLAYSTATE = 1 limit 1",
+        (podcast,),
     )
     row = cur.fetchone()
     if row:
-        pod_url, track_id = row
+        db_title, pod_url, track_id, db_playhead, db_duration = row
+        display_title = db_title or title
         podcast_url = pod_url
         episode_url = f"{pod_url}?i={int(track_id)}" if pod_url and track_id else pod_url
+        if db_duration:
+            elapsed = db_playhead or 0
+            duration = db_duration
+            remaining = max(duration - elapsed, 0)
 
     return {
-        "title": title,
+        "title": display_title,
         "podcast": podcast,
         "episode_url": episode_url,
         "podcast_url": podcast_url,
@@ -175,31 +192,49 @@ def get_now_playing(cur):
 def connect():
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
 
-def get_unplayed_queue(cur, now_dt, gap_hours=20):
+LATEST_EPISODES_LIMIT = 12
+
+def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
+    """Matches Apple's own "Latest Episodes" view: a rolling window of the
+    `limit` most recent unplayed episodes across subscribed podcasts, one
+    per podcast (its single newest unplayed episode), sorted by publish
+    date. Two earlier heuristics were tried and disproven against actual
+    screenshots of the Latest Episodes view:
+      1. A 20-hour publish-gap cluster — wrong because shows published well
+         over 20h apart were still both present, one per show.
+      2. Every unplayed episode, one per podcast, uncapped — wrong because
+         it surfaces episodes from long-dormant subscriptions going back
+         years; the real view only ever showed the ~12 most recent.
+    The count of 12 was confirmed by counting forward from a screenshot
+    where the *oldest* item at the top of the list (oldest-first sort
+    setting) matched exactly the 12th-most-recent unplayed episode across
+    all subscribed shows — not a fixed time window, since two slightly
+    older unplayed episodes existed just outside that count and were
+    excluded."""
     now_cd = dt_to_cd(now_dt)
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
-               e.ZSTORETRACKID, p.ZSTORECLEANURL
+               e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
         order by e.ZPUBDATE desc
     ''', (now_cd,))
     rows = cur.fetchall()
-    cluster = []
-    prev_dt = None
-    for title, pod, dur, pub, playhead, track_id, pod_url in rows:
+    seen_podcasts = set()
+    queue = []
+    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk in rows:
+        if pod_pk in seen_podcasts:
+            continue
+        seen_podcasts.add(pod_pk)
         d = cd_to_dt(pub)
-        if prev_dt is not None:
-            gap = (prev_dt - d).total_seconds() / 3600
-            if gap > gap_hours:
-                break
         episode_url = f"{pod_url}?i={int(track_id)}" if pod_url and track_id else pod_url
-        cluster.append({
+        queue.append({
             "title": title, "podcast": pod, "duration": dur or 0, "pubdate": d,
             "playhead": playhead or 0, "episode_url": episode_url, "podcast_url": pod_url,
         })
-        prev_dt = d
-    return cluster
+        if len(queue) == limit:
+            break
+    return queue
 
 def grade_for_days(days_behind):
     if days_behind <= 0.05:
