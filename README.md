@@ -20,11 +20,15 @@ The source data — Apple Podcasts' own "Latest Episodes" unplayed queue view:
 
 The generated HTML report:
 
-![HTML report demo](assets/html-report-demo.gif)
+![HTML report demo](assets/html-report.gif)
 
 The SMS text, as received:
 
 ![SMS report](assets/sms-report.png)
+
+The Discord embed, as posted:
+
+![Discord report](assets/discord-report.png)
 
 ## Setup
 
