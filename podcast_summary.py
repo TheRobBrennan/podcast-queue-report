@@ -98,34 +98,16 @@ def fmt_duration(seconds):
 def fmt_num(n):
     return f"{int(n):,}"
 
-def fmt_days_fraction(days):
-    """e.g. 2.53 -> '2 ½', 0.5 -> '½' (rounds to nearest quarter day).
-    Sub-day amounts drop the leading zero so reports read "½ day behind"
-    rather than "0 ½ days behind"."""
-    whole = int(days)
-    frac = days - whole
-    quarter = round(frac * 4) / 4
-    if quarter >= 1:
-        whole += 1
-        quarter = 0
-    symbols = {0: "", 0.25: "¼", 0.5: "½", 0.75: "¾"}
-    symbol = symbols.get(quarter, "")
-    if whole == 0:
-        return symbol or "0"
-    return f"{whole} {symbol}".strip()
-
-def fmt_days_behind(days, has_queue):
+def fmt_days_behind(seconds, has_queue):
     """Returns (amount, phrase) for how far behind the oldest unplayed
-    episode is. `amount` is the pluralized span alone ('½ day', '2 ½ days')
-    or None when there's nothing to catch up on; `phrase` is the full
-    ready-to-print form ('½ day behind' / 'current as of today')."""
-    fraction = fmt_days_fraction(days) if has_queue else "0"
-    if fraction == "0":
+    episode is. `amount` is fmt_duration's full-precision span alone
+    ("12 hrs 41 mins 3 seconds") or None when there's nothing to catch up
+    on; `phrase` is the ready-to-print form ("12 hrs 41 mins 3 seconds
+    behind" / "current as of today"). The letter grade still buckets by
+    whole days — this is only how the span is worded."""
+    if not has_queue or seconds < 60:
         return None, "current as of today"
-    # Singular for exactly one day and for bare fractions of a day ("½ day"),
-    # plural for everything else ("1 ¼ days").
-    singular = fraction == "1" or fraction in ("¼", "½", "¾")
-    amount = f"{fraction} day" if singular else f"{fraction} days"
+    amount = fmt_duration(seconds)
     return amount, f"{amount} behind"
 
 
@@ -309,12 +291,14 @@ def main():
     queue_total = sum(e["duration"] for e in queue)
     if queue:
         oldest = min(e["pubdate"] for e in queue)
-        days_behind = (now - oldest).total_seconds() / 86400
+        behind_seconds = (now - oldest).total_seconds()
+        days_behind = behind_seconds / 86400
     else:
         oldest = None
+        behind_seconds = 0
         days_behind = 0
     grade = grade_for_days(days_behind) if queue else "A+"
-    days_behind_amount, days_behind_phrase = fmt_days_behind(days_behind, bool(queue))
+    days_behind_amount, days_behind_phrase = fmt_days_behind(behind_seconds, bool(queue))
 
     # --- Played stats windows ---
     state = load_state()
@@ -360,7 +344,6 @@ def main():
             "total_fmt": fmt_duration(queue_total),
             "oldest_date": oldest.isoformat() if oldest else None,
             "days_behind": round(days_behind, 2),
-            "days_behind_fmt": fmt_days_fraction(days_behind) if queue else "0",
             "days_behind_amount": days_behind_amount,
             "days_behind_phrase": days_behind_phrase,
             "grade": grade,
