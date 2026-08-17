@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Grade colors</title><style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; margin: 0; padding: 32px; color: #1e293b; }
+  .container { max-width: 560px; margin: 0 auto; background: white; border-radius: 12px; padding: 24px 28px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  h1 { font-size: 17px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin: 0 0 4px; }
+  .sub { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 7px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  tr.anchor td { background: #f8fafc; }
+  .grade-badge { display: inline-block; border-radius: 8px; padding: 2px 12px; font-weight: 700; font-size: 15px; min-width: 24px; text-align: center; }
+  .hex { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: #475569; }
+  .kind { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.4px; }
+  .bar { width: 220px; }
+  .bar span { display: block; height: 16px; border-radius: 4px; }
+  .foot { margin-top: 18px; font-size: 12px; color: #64748b; line-height: 1.5; }
+</style></head><body><div class="container">
+<h1>Grade badge colors</h1>
+<div class="sub">One continuous green &rarr; yellow &rarr; red ramp. Shaded rows are the chosen anchors; the rest are linear blends of their neighbors.</div>
+<table>
+    <tr class="anchor">
+      <td><span class="grade-badge" style="background:#15803d;color:#ffffff">A+</span></td>
+      <td class="hex">#15803d</td>
+      <td class="kind">anchor</td>
+      <td class="bar"><span style="background:#15803d"></span></td>
+    </tr>
+    <tr class="anchor">
+      <td><span class="grade-badge" style="background:#16a34a;color:#1e293b">A</span></td>
+      <td class="hex">#16a34a</td>
+      <td class="kind">anchor</td>
+      <td class="bar"><span style="background:#16a34a"></span></td>
+    </tr>
+    <tr class="">
+      <td><span class="grade-badge" style="background:#39a63f;color:#1e293b">A-</span></td>
+      <td class="hex">#39a63f</td>
+      <td class="kind">blend</td>
+      <td class="bar"><span style="background:#39a63f"></span></td>
+    </tr>
+    <tr class="">
+      <td><span class="grade-badge" style="background:#5da834;color:#1e293b">B+</span></td>
+      <td class="hex">#5da834</td>
+      <td class="kind">blend</td>
+      <td class="bar"><span style="background:#5da834"></span></td>
+    </tr>
+    <tr class="">
+      <td><span class="grade-badge" style="background:#80ab29;color:#1e293b">B</span></td>
+      <td class="hex">#80ab29</td>
+      <td class="kind">blend</td>
+      <td class="bar"><span style="background:#80ab29"></span></td>
+    </tr>
+    <tr class="">
+      <td><span class="grade-badge" style="background:#a3ae1e;color:#1e293b">B-</span></td>
+      <td class="hex">#a3ae1e</td>
+      <td class="kind">blend</td>
+      <td class="bar"><span style="background:#a3ae1e"></span></td>
+    </tr>
+    <tr class="">
+      <td><span class="grade-badge" style="background:#c7b013;color:#1e293b">C+</span></td>
+      <td class="hex">#c7b013</td>
+      <td class="kind">blend</td>
+      <td class="bar"><span style="background:#c7b013"></span></td>
+    </tr>
+    <tr class="anchor">
+      <td><span class="grade-badge" style="background:#eab308;color:#1e293b">C</span></td>
+      <td class="hex">#eab308</td>
+      <td class="kind">anchor</td>
+      <td class="bar"><span style="background:#eab308"></span></td>
+    </tr>
+    <tr class="">
+      <td><span class="grade-badge" style="background:#ea9509;color:#1e293b">C-</span></td>
+      <td class="hex">#ea9509</td>
+      <td class="kind">blend</td>
+      <td class="bar"><span style="background:#ea9509"></span></td>
+    </tr>
+    <tr class="">
+      <td><span class="grade-badge" style="background:#ea760b;color:#1e293b">D+</span></td>
+      <td class="hex">#ea760b</td>
+      <td class="kind">blend</td>
+      <td class="bar"><span style="background:#ea760b"></span></td>
+    </tr>
+    <tr class="anchor">
+      <td><span class="grade-badge" style="background:#ea580c;color:#1e293b">D</span></td>
+      <td class="hex">#ea580c</td>
+      <td class="kind">anchor</td>
+      <td class="bar"><span style="background:#ea580c"></span></td>
+    </tr>
+    <tr class="">
+      <td><span class="grade-badge" style="background:#d23a14;color:#ffffff">D-</span></td>
+      <td class="hex">#d23a14</td>
+      <td class="kind">blend</td>
+      <td class="bar"><span style="background:#d23a14"></span></td>
+    </tr>
+    <tr class="anchor">
+      <td><span class="grade-badge" style="background:#b91c1c;color:#ffffff">F</span></td>
+      <td class="hex">#b91c1c</td>
+      <td class="kind">anchor</td>
+      <td class="bar"><span style="background:#b91c1c"></span></td>
+    </tr></table>
+<div class="foot">Badge text color is derived from each badge's own WCAG relative luminance &mdash; white where it clears 4:1, dark slate across the yellow/lime middle where it doesn't.</div>
+</div></body></html>
