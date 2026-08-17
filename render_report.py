@@ -25,12 +25,56 @@ def wrap_duration(total_fmt, units_per_line=2):
         for i in range(0, len(pairs), units_per_line)
     )
 
-GRADE_COLORS = {
-    "A+": 0x0d9488, "A": 0x0d9488, "A-": 0x16a34a,
-    "B+": 0x65a30d, "B": 0xca8a04, "B-": 0xd97706,
-    "C+": 0xea580c, "C": 0xea580c, "C-": 0xdc2626,
-    "D+": 0xdc2626, "D": 0xb91c1c, "D-": 0x991b1b, "F": 0x7f1d1d,
+# Grades ride one continuous green -> yellow -> red ramp instead of a
+# hand-picked color per grade, so a +/- step reads as "slightly worse than"
+# rather than as its own category. Only the anchors below are chosen; every
+# other grade is a linear RGB blend of its neighbors, which is why B lands
+# olive-lime (between A's green and C's yellow) and D lands orange (between
+# C's yellow and F's red).
+GRADE_SCALE = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"]
+GRADE_ANCHORS = {
+    0:  (0x15, 0x80, 0x3d),   # A+  deep green
+    1:  (0x16, 0xa3, 0x4a),   # A   green
+    7:  (0xea, 0xb3, 0x08),   # C   yellow
+    10: (0xea, 0x58, 0x0c),   # D   orange
+    12: (0xb9, 0x1c, 0x1c),   # F   red
 }
+GRADE_FALLBACK = (0x33, 0x41, 0x55)  # slate, for anything not on the scale
+
+
+def grade_rgb(grade):
+    if grade not in GRADE_SCALE:
+        return GRADE_FALLBACK
+    i = GRADE_SCALE.index(grade)
+    if i in GRADE_ANCHORS:
+        return GRADE_ANCHORS[i]
+    stops = sorted(GRADE_ANCHORS)
+    lo = max(s for s in stops if s < i)
+    hi = min(s for s in stops if s > i)
+    t = (i - lo) / (hi - lo)
+    return tuple(
+        round(GRADE_ANCHORS[lo][c] + t * (GRADE_ANCHORS[hi][c] - GRADE_ANCHORS[lo][c]))
+        for c in range(3)
+    )
+
+
+def grade_hex(grade):
+    return "#%02x%02x%02x" % grade_rgb(grade)
+
+
+def grade_int(grade):
+    r, g, b = grade_rgb(grade)
+    return (r << 16) | (g << 8) | b
+
+
+def grade_text_color(grade):
+    """White text goes unreadable against the yellow/lime middle of the ramp,
+    so derive the badge's text color from the badge's own luminance (WCAG
+    relative luminance) instead of hardcoding white."""
+    chans = [c / 255 for c in grade_rgb(grade)]
+    lin = [((c + 0.055) / 1.055) ** 2.4 if c > 0.03928 else c / 12.92 for c in chans]
+    lum = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    return "#ffffff" if 1.05 / (lum + 0.05) >= 4.0 else "#1e293b"
 
 def local_tz(d):
     # Timezone comes from the JSON's config (itself sourced from the
@@ -167,7 +211,7 @@ def build_discord(d):
     embed = {
         "title": f'{d["emoji_header"]}',
         "description": description,
-        "color": GRADE_COLORS.get(q["grade"], 0x334155),
+        "color": grade_int(q["grade"]),
         "fields": fields,
         "footer": {"text": "Podcast Queue Report"},
         "timestamp": d["generated_at"],
@@ -289,13 +333,8 @@ def build_html(d):
           <td class="ep-dur">{e["duration_fmt"]}{f'<div class="ep-left">{e["remaining_fmt"]} left</div>' if e.get("in_progress") and e.get("remaining_fmt") else ""}</td>
         </tr>'''
 
-    grade_colors = {
-        "A+": "#0d9488", "A": "#0d9488", "A-": "#16a34a",
-        "B+": "#65a30d", "B": "#ca8a04", "B-": "#d97706",
-        "C+": "#ea580c", "C": "#ea580c", "C-": "#dc2626",
-        "D+": "#dc2626", "D": "#b91c1c", "D-": "#991b1b", "F": "#7f1d1d",
-    }
-    grade_color = grade_colors.get(q["grade"], "#334155")
+    grade_color = grade_hex(q["grade"])
+    grade_text = grade_text_color(q["grade"])
 
     np = d.get("now_playing")
     if np:
@@ -332,7 +371,7 @@ def build_html(d):
   .container {{ max-width: 720px; margin: 0 auto; }}
   .emoji-strip {{ font-size: 28px; letter-spacing: 2px; text-align: center; margin-bottom: 8px; line-height: 1.4; }}
   .headline {{ text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 28px; }}
-  .grade-badge {{ display: inline-block; background: {grade_color}; color: white; border-radius: 8px; padding: 2px 12px; font-weight: 700; }}
+  .grade-badge {{ display: inline-block; background: {grade_color}; color: {grade_text}; border-radius: 8px; padding: 2px 12px; font-weight: 700; }}
   .grade-line {{ white-space: nowrap; }}
   .now-playing {{ background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 14px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }}
   .now-playing .dot {{ width: 10px; height: 10px; border-radius: 50%; background: #10b981; flex-shrink: 0; animation: pulse 1.6s ease-in-out infinite; }}
