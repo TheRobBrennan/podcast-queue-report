@@ -134,7 +134,16 @@ def build_discord(d):
         ep = q["episodes"][0]
         title_link = _discord_link(f'"{ep["title"]}"', ep.get("episode_url"))
         where = f' — {_discord_link(ep["podcast"], ep.get("podcast_url"))}' if ep.get("podcast") else ""
-        description += f'**Up next:** {title_link}{where} ({fmt_relative(d, ep["pubdate"])})'
+        # Mirror the HTML report's episode table: always the publish age, plus
+        # how much is left to finish when the episode has been started. Without
+        # the second half a partially-played episode reads as a full-length
+        # listen still ahead of you, when it may be minutes from done.
+        detail = fmt_relative(d, ep["pubdate"])
+        if ep.get("in_progress") and ep.get("remaining_fmt"):
+            detail += f' · {ep["remaining_fmt"]} left'
+        elif q.get("up_next_remaining_fmt"):
+            detail += f' · {q["up_next_remaining_fmt"]}'
+        description += f'**Up next:** {title_link}{where} ({detail})'
     else:
         description += "**Up next:** queue is empty — you're all caught up!"
 
