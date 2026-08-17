@@ -1,4 +1,4 @@
-import sqlite3, datetime, json, os, sys, random, glob, subprocess
+import sqlite3, datetime, json, os, sys, glob, subprocess
 from zoneinfo import ZoneInfo
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -98,16 +98,17 @@ def fmt_duration(seconds):
 def fmt_num(n):
     return f"{int(n):,}"
 
-def fmt_days_fraction(days):
-    """e.g. 2.53 -> '2 ½' (rounds to nearest quarter day)."""
-    whole = int(days)
-    frac = days - whole
-    quarter = round(frac * 4) / 4
-    if quarter >= 1:
-        whole += 1
-        quarter = 0
-    symbols = {0: "", 0.25: " ¼", 0.5: " ½", 0.75: " ¾"}
-    return f"{whole}{symbols.get(quarter, '')}"
+def fmt_days_behind(seconds, has_queue):
+    """Returns (amount, phrase) for how far behind the oldest unplayed
+    episode is. `amount` is fmt_duration's full-precision span alone
+    ("12 hrs 41 mins 3 seconds") or None when there's nothing to catch up
+    on; `phrase` is the ready-to-print form ("12 hrs 41 mins 3 seconds
+    behind" / "current as of today"). The letter grade still buckets by
+    whole days — this is only how the span is worded."""
+    if not has_queue or seconds < 60:
+        return None, "current as of today"
+    amount = fmt_duration(seconds)
+    return amount, f"{amount} behind"
 
 
 def get_now_playing(cur):
@@ -274,11 +275,12 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 EMOJI_POOL = ["🐷","🐰","🚙","🚗","🚐","🚘","🐻","🦈","🐸","🦄","🚁","🐐","🧌","🐵",
-              "🦶","🦌","🐘","🦬","🐔","🐓","🏝️","🦖","🐙","🚀","🦥","🐨","🚂","🦩",
-              "🐳","🦁","🐢","🚜","🦒","🐝","🛸","🐊"]
+              "🦶","🦌","🐘","🦬","🐔","🐓","🏝️"]
 
-def emoji_header(n=15):
-    return "".join(random.choices(EMOJI_POOL, k=n))
+def emoji_header():
+    """Every member of the household, in order, every time — no sampling.
+    The header is the whole cast, so nobody gets left out of a report."""
+    return "".join(EMOJI_POOL)
 
 def main():
     now = datetime.datetime.utcnow()
@@ -290,11 +292,14 @@ def main():
     queue_total = sum(e["duration"] for e in queue)
     if queue:
         oldest = min(e["pubdate"] for e in queue)
-        days_behind = (now - oldest).total_seconds() / 86400
+        behind_seconds = (now - oldest).total_seconds()
+        days_behind = behind_seconds / 86400
     else:
         oldest = None
+        behind_seconds = 0
         days_behind = 0
     grade = grade_for_days(days_behind) if queue else "A+"
+    days_behind_amount, days_behind_phrase = fmt_days_behind(behind_seconds, bool(queue))
 
     # --- Played stats windows ---
     state = load_state()
@@ -340,7 +345,8 @@ def main():
             "total_fmt": fmt_duration(queue_total),
             "oldest_date": oldest.isoformat() if oldest else None,
             "days_behind": round(days_behind, 2),
-            "days_behind_fmt": fmt_days_fraction(days_behind) if queue else "0",
+            "days_behind_amount": days_behind_amount,
+            "days_behind_phrase": days_behind_phrase,
             "grade": grade,
             "up_next_remaining_fmt": fmt_duration(up_next_remaining) if up_next else None,
             "episodes": [
