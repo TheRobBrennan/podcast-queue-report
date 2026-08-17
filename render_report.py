@@ -44,6 +44,25 @@ def human_date(d, iso):
     dt_local = dt.astimezone(local_tz(d))
     return dt_local.strftime("%a %b %-d, %-I:%M%p %Z")
 
+def fmt_relative(d, iso):
+    """Podcasts.app-style relative age: "13h ago", "1d ago", "Just now".
+    Anything older than a week falls back to an absolute date, same as the
+    app does — "6d ago" is legible, "43d ago" isn't. Measured against the
+    report's own generated_at so every line in one report agrees."""
+    then = datetime.datetime.fromisoformat(iso).replace(tzinfo=datetime.timezone.utc)
+    now = datetime.datetime.fromisoformat(d["generated_at"]).replace(tzinfo=datetime.timezone.utc)
+    seconds = (now - then).total_seconds()
+    if seconds < 60:
+        return "Just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m ago"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}h ago"
+    if seconds < 7 * 86400:
+        return f"{int(seconds // 86400)}d ago"
+    local = then.astimezone(local_tz(d))
+    return local.strftime("%b %-d") if local.year == now.astimezone(local_tz(d)).year else local.strftime("%b %-d, %Y")
+
 def pluralize(n, noun, n_fmt=None):
     disp = n_fmt if n_fmt is not None else n
     return f"{disp} {noun}" if n == 1 else f"{disp} {noun}s"
@@ -63,13 +82,14 @@ def now_playing_sentence(d):
     where = f' on {np["podcast"]}' if np["podcast"] else ""
     return f'▶️ Now playing: "{np["title"]}"{where} — {np["remaining_fmt"]} left'
 
-def up_next_sentence(q):
+def up_next_sentence(d):
+    q = d["queue"]
     if not q["episodes"]:
         return "The queue is empty — you're all caught up!"
     ep = q["episodes"][0]
     return (f'There are currently {pluralize(q["count"], "episode", q["count_fmt"])} in the queue for a total time of '
             f'{q["total_fmt"]} — with the next episode to complete being "{ep["title"]}" '
-            f'({q["up_next_remaining_fmt"]} left to finish playing).')
+            f'from {fmt_relative(d, ep["pubdate"])}, {q["up_next_remaining_fmt"]} left to finish playing.')
 
 def build_chat_summary(d):
     q = d["queue"]
@@ -82,7 +102,7 @@ def build_chat_summary(d):
     if now_playing:
         lines.append(now_playing)
         lines.append("")
-    lines.append(up_next_sentence(q))
+    lines.append(up_next_sentence(d))
     lines.append("")
     lines.append("Played:")
     for key, label in PLAYED_LABELS:
@@ -114,7 +134,7 @@ def build_discord(d):
         ep = q["episodes"][0]
         title_link = _discord_link(f'"{ep["title"]}"', ep.get("episode_url"))
         where = f' — {_discord_link(ep["podcast"], ep.get("podcast_url"))}' if ep.get("podcast") else ""
-        description += f'**Up next:** {title_link}{where}'
+        description += f'**Up next:** {title_link}{where} ({fmt_relative(d, ep["pubdate"])})'
     else:
         description += "**Up next:** queue is empty — you're all caught up!"
 
@@ -160,7 +180,7 @@ def build_sms(d):
     lines.append("📋 LATEST EPISODES")
     if q["episodes"]:
         lines.append(f'{pluralize(q["count"], "episode", q["count_fmt"])} · {q["total_fmt"]}')
-        lines.append(f'Oldest: {human_date(d, q["oldest_date"])} ({q["days_behind_phrase"]})')
+        lines.append(f'Oldest: {fmt_relative(d, q["oldest_date"])} ({q["days_behind_phrase"]})')
     else:
         lines.append("Empty — you're all caught up!")
     return "\n".join(lines)
@@ -178,7 +198,7 @@ def build_email(d):
     if now_playing:
         lines.append(now_playing)
         lines.append("")
-    lines.append(up_next_sentence(q))
+    lines.append(up_next_sentence(d))
     lines.append("")
     lines.append("PLAYED")
     for key, label in PLAYED_LABELS:
@@ -256,7 +276,7 @@ def build_html(d):
         rows += f'''
         <tr class="{"up-next-row" if (i == 0 or is_playing) else ""}">
           <td class="ep-title">{title_html}{badge}<div class="ep-pod">{pod_html}</div></td>
-          <td class="ep-date">{pub.strftime("%a %b %-d")}</td>
+          <td class="ep-date" title="{pub.strftime("%a %b %-d, %-I:%M%p %Z")}">{fmt_relative(d, e["pubdate"])}</td>
           <td class="ep-dur">{e["duration_fmt"]}</td>
         </tr>'''
 
@@ -288,7 +308,8 @@ def build_html(d):
     # No oldest episode at all means the queue is empty — there's nothing to
     # date-stamp, so say so instead of printing an "Oldest:" line.
     if q["oldest_date"]:
-        oldest_html = f'Oldest: {human_date(d, q["oldest_date"])} ({q["days_behind_phrase"]})'
+        oldest_html = (f'Oldest: <span title="{human_date(d, q["oldest_date"])}">'
+                       f'{fmt_relative(d, q["oldest_date"])}</span> ({q["days_behind_phrase"]})')
     else:
         oldest_html = "Empty &mdash; you&rsquo;re all caught up!"
 
