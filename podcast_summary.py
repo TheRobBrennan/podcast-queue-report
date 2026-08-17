@@ -117,16 +117,20 @@ def get_now_playing(cur):
     is the current player and it's actually playing (not just paused) —
     the SQLite library alone can't tell us that, only playhead position.
 
-    nowplaying-cli's title is unreliable for display: for some podcasts
-    (observed with My First Million) it's a live per-segment/chapter string
-    that changes every few seconds ("Intro — ...", "Hark, a human in a box —
-    ...", "zero constraints — ..." — all for the same episode), which never
-    matches the episode's stored title and made every store-link lookup fail
-    silently. Instead, once we know which podcast (artist) is playing, we
-    look up that podcast's currently-playing episode directly via
-    ZPLAYSTATE=1 to get its stable title and store links; nowplaying-cli is
-    only trusted for confirming playback is active and for elapsed/
-    remaining timing."""
+    nowplaying-cli's title AND elapsed/duration are unreliable for some
+    podcasts (observed with My First Million): the title is a live
+    per-segment/chapter string that changes every few seconds ("Intro —
+    ...", "Hark, a human in a box — ...", "zero constraints — ..." — all
+    for the same episode) and never matches the stored episode title, and
+    kMRMediaRemoteNowPlayingInfoElapsedTime read back as 0 on every poll
+    across several minutes of real playback — it isn't tracking actual
+    position for this kind of chapter-shifting Now Playing info. Once we
+    know which podcast (artist) is playing, we instead look up that
+    podcast's currently-playing episode directly via ZPLAYSTATE=1 to get
+    its stable title, store links, and the library's own ZPLAYHEAD/
+    ZDURATION for elapsed/remaining — nowplaying-cli is only trusted for
+    confirming playback is actually active, and as a fallback if that DB
+    lookup comes up empty."""
     try:
         result = subprocess.run(
             ["nowplaying-cli", "get-raw"], capture_output=True, text=True, timeout=3
@@ -157,17 +161,21 @@ def get_now_playing(cur):
     episode_url = None
     podcast_url = None
     cur.execute(
-        "select e.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID "
+        "select e.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID, e.ZPLAYHEAD, e.ZDURATION "
         "from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK "
         "where p.ZTITLE = ? and e.ZPLAYSTATE = 1 limit 1",
         (podcast,),
     )
     row = cur.fetchone()
     if row:
-        db_title, pod_url, track_id = row
+        db_title, pod_url, track_id, db_playhead, db_duration = row
         display_title = db_title or title
         podcast_url = pod_url
         episode_url = f"{pod_url}?i={int(track_id)}" if pod_url and track_id else pod_url
+        if db_duration:
+            elapsed = db_playhead or 0
+            duration = db_duration
+            remaining = max(duration - elapsed, 0)
 
     return {
         "title": display_title,
