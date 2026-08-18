@@ -32,7 +32,7 @@ setup:
 	fi
 
 run:
-	@echo "📥 Querying Podcasts library..."
+	@echo "🎧 Catching up on your queue..."
 	@$(PYTHON) podcast_summary.py > $(RUN_JSON)
 
 chat: run
@@ -48,6 +48,7 @@ html: run
 	@echo "🌐 Writing HTML report..."
 	@$(PYTHON) render_report.py $(RUN_JSON) html > reports/podcast_report.html
 	@echo "✅ Wrote reports/podcast_report.html"
+	@echo ""
 
 open: html
 	@open reports/podcast_report.html
@@ -57,6 +58,7 @@ all: chat sms email html
 discord: run
 	@echo "💬 Posting to Discord..."
 	@$(PYTHON) render_report.py $(RUN_JSON) discord | $(PYTHON) scripts/post_discord.py
+	@echo ""
 
 unlock:
 	$(PYTHON) scripts/git_unlock.py
