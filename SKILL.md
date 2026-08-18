@@ -85,6 +85,6 @@ per-run confirmation step; consent is expressed by configuring `.env`.
   folders reject unlink operations even though renames succeed. If a git
   command in this repo fails with something like "Unable to create
   '.git/index.lock': File exists," run `make unlock` and retry — see
-  `README.md`'s "Git on a FUSE-backed folder" section.
+  `scripts/git_unlock.py`'s docstring for why this happens.
 - To commit changes in this repo, prefer `make commit MSG='...'` over raw
   `git commit` — it clears stale lock files first automatically.

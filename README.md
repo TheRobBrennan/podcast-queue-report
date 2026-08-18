@@ -101,7 +101,7 @@ agent working in this repo. Run `make help` any time for the full list.
 | `make discord` | Posts the chat summary to Discord via webhook (needs `DISCORD_WEBHOOK_URL` in `.env`) |
 | `make open` | Regenerates the HTML report and opens it in your default browser (macOS `open`) |
 | `make all` | Runs the query once, then chat + html + email + sms + discord (each send skips cleanly if unconfigured) |
-| `make unlock` | Clears stale git lock files (see "Git on a FUSE-backed folder" below) |
+| `make unlock` | Clears stale git lock files (see `scripts/git_unlock.py`) |
 | `make commit MSG='...'` | Unlocks, stages everything, commits |
 | `make clean` | Removes the scratch `/tmp/podcast_run.json` file |
 
@@ -150,7 +150,7 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
 - `Makefile` — convenience commands wrapping the two scripts above; see
   "Quick commands" below.
 - `scripts/git_unlock.py` — clears stale git lock files on filesystems that
-  block deletes; see "Git on a FUSE-backed folder" below.
+  block deletes (see its own docstring for the full story).
 - `scripts/make_grade_swatches.py` — regenerates `assets/grade-colors.png`,
   the grade color swatch sheet in "In action" above, straight from
   `render_report.py`'s own palette functions.
@@ -202,23 +202,6 @@ explanatory message if its `.env` destination (`REPORT_EMAIL`,
 for each channel, there's no per-run confirmation prompt. `make all` /
 `npm start` run all of it from one query. See `SKILL.md` for how an AI
 agent should drive this.
-
-## Git on a FUSE-backed folder
-
-If this repo lives on a filesystem that allows renames but rejects deletes
-(this happened with a Cowork-mounted folder during development — `unlink()`
-fails with `EPERM` even though `rename()` works fine), plain git commands
-can start failing with things like:
-
-```
-fatal: Unable to create '.../.git/index.lock': File exists.
-```
-
-That's git leaving lock/tmp files behind because it couldn't clean up after
-itself. Run `make unlock` (or `python3 scripts/git_unlock.py` directly) to
-clear them, or just use `make commit MSG='...'`, which unlocks first
-automatically. This is a no-op and harmless to run on a normal filesystem —
-skip this entirely if you're not hitting the error above.
 
 ## Known caveats
 
