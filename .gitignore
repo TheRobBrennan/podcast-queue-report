@@ -6,3 +6,4 @@ __pycache__/
 *.bak
 *.stale
 .DS_Store
+reports/*.html
