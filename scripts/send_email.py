@@ -76,6 +76,8 @@ def main():
 set subjectText to (read POSIX file "{subject_path}" as «class utf8»)
 set bodyText to (read POSIX file "{body_path}" as «class utf8»)
 tell application "Mail"
+    activate
+    delay 1
     set newMessage to make new outgoing message with properties {{subject:subjectText, content:bodyText, visible:false}}
     tell newMessage
         make new to recipient with properties {{address:"{to_address}"}}{attach_clause}
