@@ -246,12 +246,26 @@ def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
     holds when the started episode is far older than the cap window, which
     is exactly when losing it hurts most (it is the episode driving the
     "behind" figure and the grade). Re-verify against a screenshot of the
-    real Latest Episodes view if the counts ever look off."""
+    real Latest Episodes view if the counts ever look off.
+
+    5. A pure "12 most recent, one per podcast" rank on never-started
+       episodes — wrong because it ranks purely by ZPUBDATE, and this
+       library has a subscribed show (NASA's Curious Universe) whose
+       newest unplayed episode ranked inside that window by publish date
+       alone, yet never appeared in the real Latest Episodes view. The
+       episode library carries e.ZLISTENNOWEPISODE, a flag Apple itself
+       sets on (usually) exactly one never-started episode per podcast —
+       the one it considers eligible for Listen Now. Requiring that flag
+       drops NASA's episode (ZLISTENNOWEPISODE is NULL on it) and admits
+       the next-newest never-started episode across all other subscribed
+       shows in its place, which is what the real view showed. Started
+       episodes are exempt from this check — they're already pinned via
+       the recency rule above, independent of the flag."""
     now_cd = dt_to_cd(now_dt)
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
-               e.ZLASTDATEPLAYED
+               e.ZLASTDATEPLAYED, e.ZLISTENNOWEPISODE
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
         order by e.ZPUBDATE desc
@@ -262,8 +276,14 @@ def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
     started = []
     seen_fresh = set()
     seen_started = set()
-    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played in rows:
+    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played, listen_now in rows:
         is_started = playstate == 1 or (playhead or 0) > 0
+        # A never-started episode only counts as a fresh candidate if Apple
+        # itself flagged it ZLISTENNOWEPISODE=1 - see the 5th case in this
+        # docstring. Started episodes are exempt (pinning already has its
+        # own recency rule below).
+        if not is_started and not listen_now:
+            continue
         bucket, seen = (started, seen_started) if is_started else (fresh, seen_fresh)
         if pod_pk in seen:
             continue
