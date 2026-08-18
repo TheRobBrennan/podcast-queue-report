@@ -1,0 +1,20 @@
+{
+  "name": "podcast-queue-report",
+  "version": "0.0.0",
+  "description": "Reads a local Apple Podcasts library and generates a summary of the unplayed queue with listening stats and a letter grade.",
+  "homepage": "https://github.com/TheRobBrennan/podcast-queue-report#readme",
+  "bugs": {
+    "url": "https://github.com/TheRobBrennan/podcast-queue-report/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheRobBrennan/podcast-queue-report.git"
+  },
+  "license": "MIT",
+  "author": "Rob Brennan <rob@sploosh.ai>",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
