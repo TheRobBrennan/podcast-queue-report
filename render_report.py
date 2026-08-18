@@ -351,19 +351,19 @@ def build_html(d):
   body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; margin: 0; padding: 32px; color: #1e293b; }}
   .container {{ max-width: 720px; margin: 0 auto; }}
   .emoji-strip {{ font-size: 28px; letter-spacing: 2px; text-align: center; margin-bottom: 8px; line-height: 1.4; }}
-  .headline {{ text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 28px; }}
+  .headline {{ text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 36px; }}
   .grade-badge {{ display: inline-block; background: {grade_color}; color: {grade_text}; border-radius: 8px; padding: 2px 12px; font-weight: 700; }}
   .grade-line {{ white-space: nowrap; }}
-  .now-playing {{ background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 14px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }}
+  .now-playing {{ background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 14px 20px; margin-bottom: 32px; display: flex; align-items: center; gap: 10px; }}
   .now-playing .dot {{ width: 10px; height: 10px; border-radius: 50%; background: #10b981; flex-shrink: 0; animation: pulse 1.6s ease-in-out infinite; }}
   @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.35; }} }}
   .now-playing .text {{ font-size: 14px; color: #065f46; }}
   .now-playing .text b {{ color: #064e3b; }}
-  .queue-summary {{ background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+  .queue-summary {{ background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   .queue-summary h2 {{ margin: 0 0 4px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }}
   .queue-summary .big {{ font-size: 32px; font-weight: 700; }}
   .queue-summary .sub {{ color: #64748b; font-size: 14px; margin-top: 4px; }}
-  .cards {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 28px; }}
+  .cards {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; margin-bottom: 36px; }}
   .card {{ background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   .card-label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.6px; margin-bottom: 8px; }}
   .card-count-row {{ display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }}
@@ -384,7 +384,7 @@ def build_html(d):
   .now-playing-badge {{ display: inline-block; background: #d1fae5; color: #047857; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }}
   .up-next-row {{ background: #f8fafc; }}
   .ep-date, .ep-dur {{ color: #475569; white-space: nowrap; }}
-  .footer {{ text-align: center; color: #94a3b8; font-size: 12px; margin-top: 24px; }}
+  .footer {{ text-align: center; color: #94a3b8; font-size: 12px; margin-top: 32px; }}
 </style>
 </head>
 <body>
