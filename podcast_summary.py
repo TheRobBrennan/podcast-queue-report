@@ -192,7 +192,7 @@ def get_now_playing(cur):
 def connect():
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
 
-LATEST_EPISODES_LIMIT = 12
+LATEST_EPISODES_LIMIT = 13
 
 def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
     """Matches Apple's own "Latest Episodes" view: a rolling window of the
@@ -222,12 +222,24 @@ def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
          Feb 2026); none appear in the real view, but pinning them all
          dragged the oldest item back to Oct 2023 — "2 years 9 months
          behind", grade F, against the A-/B+ the view actually implies.
-    The count of 12 was confirmed by counting forward from a screenshot
-    where the *oldest* item at the top of the list (oldest-first sort
-    setting) matched exactly the 12th-most-recent unplayed episode across
-    all subscribed shows — not a fixed time window, since two slightly
-    older unplayed episodes existed just outside that count and were
-    excluded.
+      5. Requiring e.ZLISTENNOWEPISODE=1 on never-started candidates —
+         tried when a live report was missing a YAP episode that a real
+         screenshot showed present, while including a NASA's Curious
+         Universe episode the screenshot did NOT show. The flag looked
+         like the answer (NULL on the NASA episode, set on the YAP one)
+         but a follow-up screenshot minutes later disproved it: it showed
+         *both* episodes present simultaneously, 13 never-started items
+         total rather than a 12-item swap. The flag never changed - the
+         cap itself was just wrong.
+    The count is 13, not 12: rank every never-started episode by ZPUBDATE
+    alone, one per podcast, no flag needed - confirmed by a screenshot
+    where the oldest item at the top of the list (oldest-first sort
+    setting) matched exactly the 13th-most-recent unplayed episode across
+    all subscribed shows, with the next-oldest excluded. (An earlier
+    screenshot had suggested 12; a later one caught two more episodes -
+    NASA's and YAP's - present that the 12-cap was silently dropping.
+    Re-verify against a fresh screenshot before trusting this number again
+    if it ever looks off - the exact count isn't something to assume.)
 
     So a started episode is pinned only while it is still *active*: its
     ZLASTDATEPLAYED must be no older than the window the view already
@@ -242,30 +254,16 @@ def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
 
     Whether Apple's real rule is this pinning behavior or simply a larger
     cap could not be distinguished from a single library — both fit the
-    observed 13 items — but pinning is the safer of the two, since it also
-    holds when the started episode is far older than the cap window, which
-    is exactly when losing it hurts most (it is the episode driving the
-    "behind" figure and the grade). Re-verify against a screenshot of the
-    real Latest Episodes view if the counts ever look off.
-
-    5. A pure "12 most recent, one per podcast" rank on never-started
-       episodes — wrong because it ranks purely by ZPUBDATE, and this
-       library has a subscribed show (NASA's Curious Universe) whose
-       newest unplayed episode ranked inside that window by publish date
-       alone, yet never appeared in the real Latest Episodes view. The
-       episode library carries e.ZLISTENNOWEPISODE, a flag Apple itself
-       sets on (usually) exactly one never-started episode per podcast —
-       the one it considers eligible for Listen Now. Requiring that flag
-       drops NASA's episode (ZLISTENNOWEPISODE is NULL on it) and admits
-       the next-newest never-started episode across all other subscribed
-       shows in its place, which is what the real view showed. Started
-       episodes are exempt from this check — they're already pinned via
-       the recency rule above, independent of the flag."""
+    observed item count — but pinning is the safer of the two, since it
+    also holds when the started episode is far older than the cap window,
+    which is exactly when losing it hurts most (it is the episode driving
+    the "behind" figure and the grade). Re-verify against a screenshot of
+    the real Latest Episodes view if the counts ever look off."""
     now_cd = dt_to_cd(now_dt)
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
-               e.ZLASTDATEPLAYED, e.ZLISTENNOWEPISODE
+               e.ZLASTDATEPLAYED
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
         order by e.ZPUBDATE desc
@@ -276,14 +274,8 @@ def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
     started = []
     seen_fresh = set()
     seen_started = set()
-    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played, listen_now in rows:
+    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played in rows:
         is_started = playstate == 1 or (playhead or 0) > 0
-        # A never-started episode only counts as a fresh candidate if Apple
-        # itself flagged it ZLISTENNOWEPISODE=1 - see the 5th case in this
-        # docstring. Started episodes are exempt (pinning already has its
-        # own recency rule below).
-        if not is_started and not listen_now:
-            continue
         bucket, seen = (started, seen_started) if is_started else (fresh, seen_fresh)
         if pod_pk in seen:
             continue
