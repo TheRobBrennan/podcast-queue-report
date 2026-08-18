@@ -32,28 +32,31 @@ setup:
 	fi
 
 run:
-	$(PYTHON) podcast_summary.py > $(RUN_JSON)
+	@echo "📥 Querying Podcasts library..."
+	@$(PYTHON) podcast_summary.py > $(RUN_JSON)
 
 chat: run
-	$(PYTHON) render_report.py $(RUN_JSON) chat
+	@$(PYTHON) render_report.py $(RUN_JSON) chat
 
 sms: run
-	$(PYTHON) render_report.py $(RUN_JSON) sms
+	@$(PYTHON) render_report.py $(RUN_JSON) sms
 
 email: run
-	$(PYTHON) render_report.py $(RUN_JSON) email
+	@$(PYTHON) render_report.py $(RUN_JSON) email
 
 html: run
-	$(PYTHON) render_report.py $(RUN_JSON) html > reports/podcast_report.html
-	@echo "Wrote reports/podcast_report.html"
+	@echo "🌐 Writing HTML report..."
+	@$(PYTHON) render_report.py $(RUN_JSON) html > reports/podcast_report.html
+	@echo "✅ Wrote reports/podcast_report.html"
 
 open: html
-	open reports/podcast_report.html
+	@open reports/podcast_report.html
 
 all: chat sms email html
 
 discord: run
-	$(PYTHON) render_report.py $(RUN_JSON) discord | $(PYTHON) scripts/post_discord.py
+	@echo "💬 Posting to Discord..."
+	@$(PYTHON) render_report.py $(RUN_JSON) discord | $(PYTHON) scripts/post_discord.py
 
 unlock:
 	$(PYTHON) scripts/git_unlock.py
