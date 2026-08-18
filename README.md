@@ -96,7 +96,7 @@ agent working in this repo. Run `make help` any time for the full list.
 | `make run` | Queries the Podcasts DB once, writes `/tmp/podcast_run.json` |
 | `make chat` | Prints the chat summary (preview only, nothing sent) |
 | `make html` | Regenerates `reports/podcast_report.html` |
-| `make email` | Emails the report via Mail.app (needs `REPORT_EMAIL` in `.env`) |
+| `make email` | Emails the report via Outlook (needs `REPORT_EMAIL` in `.env`) |
 | `make sms` | Texts the report via Messages.app (needs `REPORT_PHONE` in `.env`) |
 | `make discord` | Posts the chat summary to Discord via webhook (needs `DISCORD_WEBHOOK_URL` in `.env`) |
 | `make open` | Regenerates the HTML report and opens it in your default browser (macOS `open`) |
@@ -169,7 +169,7 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
 | `PODCASTS_DB_PATH` | Path to `MTLibrary.sqlite` | Auto-detects the standard macOS location |
 | `REPORT_TIMEZONE` | IANA timezone for date/window boundaries | `UTC` |
 | `REPORT_SIGNOFF_NAME` | Name used in the email sign-off | (omitted if unset) |
-| `REPORT_EMAIL` | Delivery email address - `make email` (Mail.app) skips if unset | (none) |
+| `REPORT_EMAIL` | Delivery email address - `make email` (Outlook) skips if unset | (none) |
 | `REPORT_PHONE` | Delivery phone number - `make sms` (Messages.app) skips if unset | (none) |
 | `REPORT_LABEL` | Prefix used to build the email subject line | `Podcast Queue Report` |
 | `DISCORD_WEBHOOK_URL` | Discord webhook - `make discord` skips if unset | (none) |
@@ -194,7 +194,7 @@ date is versus now (in `REPORT_TIMEZONE`).
 ## Delivery
 
 `make email`, `make sms`, and `make discord` each send for real -
-`scripts/send_email.py` drives Mail.app, `scripts/send_sms.py` drives
+`scripts/send_email.py` drives Outlook, `scripts/send_sms.py` drives
 Messages.app (both via AppleScript, macOS only), and
 `scripts/post_discord.py` posts to a webhook. Each skips cleanly with an
 explanatory message if its `.env` destination (`REPORT_EMAIL`,

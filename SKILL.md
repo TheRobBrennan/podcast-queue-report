@@ -23,7 +23,7 @@ per-run confirmation step; consent is expressed by configuring `.env`.
 2. Runs `render_report.py` against that JSON to produce a chat summary, an
    SMS-length text, an email subject/body, a full HTML report, and/or a
    Discord embed.
-3. Automatically delivers the report - `make email` (Mail.app),
+3. Automatically delivers the report - `make email` (Outlook),
    `make sms` (Messages.app), and `make discord` (webhook) each skip
    cleanly if their `.env` destination isn't configured.
 
@@ -60,7 +60,7 @@ per-run confirmation step; consent is expressed by configuring `.env`.
 4. Delivery already happened as part of step 2 if `make all` was used - no
    separate send step, and no per-run confirmation prompt, since `.env`
    configuration is the consent mechanism (same model as Discord's
-   `DISCORD_WEBHOOK_URL`). `make email` uses Mail.app and `make sms`
+   `DISCORD_WEBHOOK_URL`). `make email` uses Outlook and `make sms`
    uses Messages.app (both AppleScript, macOS only) to send to
    `REPORT_EMAIL`/`REPORT_PHONE`; either skips with an explanatory message
    if its variable is blank. If the user asks to *stop* a channel from

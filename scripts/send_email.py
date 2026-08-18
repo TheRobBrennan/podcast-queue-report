@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Send the report by email via Apple Mail (AppleScript). Reads stdin in the
-format `render_report.py ... email` produces:
+Send the report by email via Microsoft Outlook (AppleScript). Reads stdin
+in the format `render_report.py ... email` produces:
 
     SUBJECT: <subject line>
     ---
@@ -15,7 +15,7 @@ If reports/podcast_report.html exists, it's attached to the message.
 
 Usage:
     python3 render_report.py /tmp/podcast_run.json email | python3 scripts/send_email.py
-    make send-email
+    make email
 """
 import os
 import subprocess
@@ -68,19 +68,18 @@ def main():
     attach_clause = ""
     if os.path.exists(HTML_REPORT_PATH):
         attach_clause = (
-            f'\n        make new attachment with properties '
-            f'{{file name:(POSIX file "{HTML_REPORT_PATH}")}} at after last paragraph'
+            f'\n        make new attachment at newMessage with properties '
+            f'{{file:(POSIX file "{HTML_REPORT_PATH}")}}'
         )
 
     script = f'''
 set subjectText to (read POSIX file "{subject_path}" as «class utf8»)
 set bodyText to (read POSIX file "{body_path}" as «class utf8»)
-tell application "Mail"
+tell application "Microsoft Outlook"
     activate
-    delay 1
-    set newMessage to make new outgoing message with properties {{subject:subjectText, content:bodyText, visible:false}}
+    set newMessage to make new outgoing message with properties {{subject:subjectText, plain text content:bodyText}}
     tell newMessage
-        make new to recipient with properties {{address:"{to_address}"}}{attach_clause}
+        make new to recipient at newMessage with properties {{email address:{{address:"{to_address}"}}}}{attach_clause}
     end tell
     send newMessage
 end tell
@@ -92,7 +91,7 @@ end tell
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            print(f"Mail send failed: {result.stderr.strip()}", file=sys.stderr)
+            print(f"Outlook send failed: {result.stderr.strip()}", file=sys.stderr)
             sys.exit(1)
         print(f"Emailed report to {to_address}.")
     finally:

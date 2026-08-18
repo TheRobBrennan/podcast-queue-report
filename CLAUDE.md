@@ -82,7 +82,7 @@ minimal built-in `.env` loader. Nothing to `pip install`.
   four separate `make chat && make sms && ...`).
 - **Delivery (email/text/Discord) is automatic, gated by `.env`.**
   `make email` / `make sms` / `make discord` each send for real via
-  `scripts/send_email.py` (Mail.app), `scripts/send_sms.py` (Messages.app),
+  `scripts/send_email.py` (Outlook), `scripts/send_sms.py` (Messages.app),
   and `scripts/post_discord.py` (webhook) - and each skips cleanly if its
   destination variable is blank. There's no per-run confirmation step;
   consent is expressed by what's configured in `.env`. See `SKILL.md`.

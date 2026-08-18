@@ -11,7 +11,7 @@ help:
 	@echo "  make run               Query the Podcasts DB, write $(RUN_JSON)"
 	@echo "  make chat              Print the chat summary"
 	@echo "  make sms               Text the report via Messages.app (needs REPORT_PHONE in .env)"
-	@echo "  make email             Email the report via Mail.app (needs REPORT_EMAIL in .env)"
+	@echo "  make email             Email the report via Outlook (needs REPORT_EMAIL in .env)"
 	@echo "  make html              Regenerate reports/podcast_report.html"
 	@echo "  make open              Regenerate the HTML report and open it in your browser"
 	@echo "  make all               Run once, then chat + html + email + sms + discord"
