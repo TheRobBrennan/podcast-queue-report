@@ -1,8 +1,11 @@
 # Podcast Queue Report skill
 
 Reference instructions for an AI agent (e.g. Claude in Claude Code or Cowork)
-to generate — and, only with explicit user confirmation, deliver — a report
-on the user's Apple Podcasts unplayed queue.
+to generate a report on the user's Apple Podcasts unplayed queue. Delivery
+(email, SMS, Discord) is automated via `make all` / `npm start`, gated
+entirely by which of REPORT_EMAIL, REPORT_PHONE, and DISCORD_WEBHOOK_URL
+are set in `.env` - leaving one blank skips that channel. There is no
+per-run confirmation step; consent is expressed by configuring `.env`.
 
 > This skill assumes the repo has already been cloned and configured per the
 > "Setup" section of `README.md` (i.e. `.env` exists next to these scripts
@@ -18,23 +21,26 @@ on the user's Apple Podcasts unplayed queue.
    time windows (since last check, yesterday, past week, this month, all
    time).
 2. Runs `render_report.py` against that JSON to produce a chat summary, an
-   SMS-length text, an email subject/body, and/or a full HTML report.
-3. Optionally, with the user's explicit go-ahead for *that specific run*,
-   delivers the report by text message and/or email.
+   SMS-length text, an email subject/body, a full HTML report, and/or a
+   Discord embed.
+3. Automatically delivers the report - `make email` (Mail.app),
+   `make sms` (Messages.app), and `make discord` (webhook) each skip
+   cleanly if their `.env` destination isn't configured.
 
 ## Steps
 
 1. `cd` into the repo (wherever it was cloned). Confirm `.env` exists; if
    not, stop and tell the user to complete Setup in `README.md` first.
 2. Run `make all` (queries the Podcasts DB once, then renders chat + sms +
-   email + html from that single snapshot — see `README.md`'s "Quick
-   commands" section). If you only need one format, `make chat` / `make sms`
-   / `make email` / `make html` also work individually, each doing its own
-   fresh query. Don't call `podcast_summary.py` directly more than once per
-   report — it advances the "since last check" stats window on every run.
-   If this fails because the Podcasts database can't be found or opened,
-   report the exact error to the user rather than guessing — do not fall
-   back to fabricated data.
+   email + html and sends email/sms/Discord from that single snapshot —
+   see `README.md`'s "Quick commands" section). If you only need one format
+   without sending anything, `make chat` / `make sms` / `make email` /
+   `make html` also work individually, each doing its own fresh query.
+   Don't call `podcast_summary.py` directly more than once per report — it
+   advances the "since last check" stats window on every run. If this fails
+   because the Podcasts database can't be found or opened, report the exact
+   error to the user rather than guessing — do not fall back to fabricated
+   data.
 3. Show the chat summary in the conversation, and open the HTML report for
    the user to see:
    - **Running in a real shell on the Mac** (e.g. Claude Code with direct
@@ -51,32 +57,25 @@ on the user's Apple Podcasts unplayed queue.
      generated `reports/podcast_report.html` file to the user directly
      (e.g. via a file-sharing tool) so they can open it themselves with one
      click.
-4. **Only if the user explicitly asks to send/text/email this run** (a
-   standing schedule does not count as consent for an individual send —
-   always confirm the specific run):
-   - **Text message**: open Messages (native app, via computer use) and
-     send the `sms` output to the phone number configured as `REPORT_PHONE`
-     in `.env` (read it from the JSON's `config.phone` field — never
-     hardcode a number in this skill).
-   - **Email**: open the email client named in `.env`'s
-     `REPORT_EMAIL_CLIENT` (read from `config.email_client`) — the user has
-     specifically asked for their configured client, not necessarily the OS
-     default Mail app. Compose to `config.email`, using the `SUBJECT:` line
-     and body from the `email` render, and **attach**
-     `reports/podcast_report.html` (browse to it directly via Finder/the
-     attach dialog's folder navigation — a freshly-written file may not show
-     up in a filename search yet due to indexing lag).
-   - Always show the user what will be sent and to whom before hitting
-     send, and wait for confirmation.
+4. Delivery already happened as part of step 2 if `make all` was used - no
+   separate send step, and no per-run confirmation prompt, since `.env`
+   configuration is the consent mechanism (same model as Discord's
+   `DISCORD_WEBHOOK_URL`). `make email` uses Mail.app and `make sms`
+   uses Messages.app (both AppleScript, macOS only) to send to
+   `REPORT_EMAIL`/`REPORT_PHONE`; either skips with an explanatory message
+   if its variable is blank. If the user asks to *stop* a channel from
+   sending, comment out or blank that variable in `.env` rather than trying
+   to intercept the send at runtime.
 5. State updates automatically: `podcast_summary.py` records
    `.podcast_skill_state.json` (gitignored) with this run's timestamp, so
    the next run's "since last check" window starts from here.
 
 ## Notes for the agent
 
-- Never invent or guess the destination email/phone/client — always read
-  them from `.env` via the JSON `config` block. If any are blank, skip that
-  delivery channel and tell the user it isn't configured.
+- Never invent or guess the destination email/phone — always read them
+  from `.env` (the scripts do this automatically). If any are blank, that
+  channel is skipped by design; tell the user it isn't configured rather
+  than trying to work around it.
 - If this environment sandboxes file access (e.g. Claude Cowork's bash
   sandbox vs. its Read/Write/Edit tools), be aware paths may differ between
   tools — resolve the real repo/database paths dynamically rather than

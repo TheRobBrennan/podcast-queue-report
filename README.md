@@ -94,22 +94,27 @@ agent working in this repo. Run `make help` any time for the full list.
 |---|---|
 | `make setup` | First-time setup: copies `.env.example` to `.env` |
 | `make run` | Queries the Podcasts DB once, writes `/tmp/podcast_run.json` |
-| `make chat` | Prints the chat summary |
-| `make sms` | Prints the SMS text |
-| `make email` | Prints the email `SUBJECT:` + body |
+| `make chat` | Prints the chat summary (preview only, nothing sent) |
 | `make html` | Regenerates `reports/podcast_report.html` |
+| `make email` | Emails the report via Mail.app (needs `REPORT_EMAIL` in `.env`) |
+| `make sms` | Texts the report via Messages.app (needs `REPORT_PHONE` in `.env`) |
 | `make discord` | Posts the chat summary to Discord via webhook (needs `DISCORD_WEBHOOK_URL` in `.env`) |
 | `make open` | Regenerates the HTML report and opens it in your default browser (macOS `open`) |
-| `make all` | Runs the query once, then renders chat + sms + email + html |
+| `make all` | Runs the query once, then chat + html + email + sms + discord (each send skips cleanly if unconfigured) |
 | `make unlock` | Clears stale git lock files (see "Git on a FUSE-backed folder" below) |
 | `make commit MSG='...'` | Unlocks, stages everything, commits |
 | `make clean` | Removes the scratch `/tmp/podcast_run.json` file |
 
-`chat`/`sms`/`email`/`html` each depend on `run`, so calling any one of them
-alone re-queries the database fresh; `make all` only queries once and reuses
-that same snapshot for all four renders (important, since each run also
-advances the "since last check" stats window — you don't want `make all` to
-silently zero that out by running the query four times in a row).
+`npm start` is a shortcut for `make all` followed by opening the fresh HTML
+report in your browser, with a `time` around the whole thing.
+
+`chat`, `html`, `sms`, and `discord` each depend on `run`; `email` depends
+on `html` (so the HTML report already exists to attach). Calling any one of
+them alone re-queries the database fresh; `make all` only queries once and
+reuses that same snapshot for everything it does (important, since each
+query also advances the "since last check" stats window — you don't want
+`make all` to silently zero that out by running the query five times in a
+row).
 
 `make open` uses the standard macOS `open` command, so it launches your
 actual default browser — but only when run from a real shell on the Mac
@@ -154,8 +159,8 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
 - `.podcast_skill_state.json` (gitignored, local only) — tracks the last run
   timestamp, used for the "since last check" played-stats window.
 - `SKILL.md` — self-contained instructions for an AI agent (e.g. Claude) to
-  run this report and, with explicit user confirmation, deliver it by email
-  or text.
+  run this report and automatically deliver it by email, text, and/or
+  Discord, gated by which `.env` variables are configured.
 
 ## Environment variables
 
@@ -164,10 +169,10 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
 | `PODCASTS_DB_PATH` | Path to `MTLibrary.sqlite` | Auto-detects the standard macOS location |
 | `REPORT_TIMEZONE` | IANA timezone for date/window boundaries | `UTC` |
 | `REPORT_SIGNOFF_NAME` | Name used in the email sign-off | (omitted if unset) |
-| `REPORT_EMAIL` | Delivery email address | (none) |
-| `REPORT_PHONE` | Delivery phone number | (none) |
+| `REPORT_EMAIL` | Delivery email address - `make email` (Mail.app) skips if unset | (none) |
+| `REPORT_PHONE` | Delivery phone number - `make sms` (Messages.app) skips if unset | (none) |
 | `REPORT_LABEL` | Prefix used to build the email subject line | `Podcast Queue Report` |
-| `REPORT_EMAIL_CLIENT` | Which email client to use (informational, read by the Claude skill) | (none) |
+| `DISCORD_WEBHOOK_URL` | Discord webhook - `make discord` skips if unset | (none) |
 
 ## Grading scale
 
@@ -188,10 +193,15 @@ date is versus now (in `REPORT_TIMEZONE`).
 
 ## Delivery
 
-Delivery (email/text) is handled by an AI agent driving the Mac's UI (Mail,
-Outlook, Messages, etc.), not by this code — see `SKILL.md`. It always
-requires explicit user go-ahead before sending anything, even on an
-automated schedule.
+`make email`, `make sms`, and `make discord` each send for real -
+`scripts/send_email.py` drives Mail.app, `scripts/send_sms.py` drives
+Messages.app (both via AppleScript, macOS only), and
+`scripts/post_discord.py` posts to a webhook. Each skips cleanly with an
+explanatory message if its `.env` destination (`REPORT_EMAIL`,
+`REPORT_PHONE`, `DISCORD_WEBHOOK_URL`) is blank - that's the on/off switch
+for each channel, there's no per-run confirmation prompt. `make all` /
+`npm start` run all of it from one query. See `SKILL.md` for how an AI
+agent should drive this.
 
 ## Git on a FUSE-backed folder
 

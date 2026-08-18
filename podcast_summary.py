@@ -44,7 +44,6 @@ REPORT_EMAIL = os.environ.get("REPORT_EMAIL", "")
 REPORT_PHONE = os.environ.get("REPORT_PHONE", "")
 REPORT_SIGNOFF_NAME = os.environ.get("REPORT_SIGNOFF_NAME", "")
 REPORT_LABEL = os.environ.get("REPORT_LABEL", "Podcasts Report")
-REPORT_EMAIL_CLIENT = os.environ.get("REPORT_EMAIL_CLIENT", "")
 
 STATE_PATH = os.path.join(SCRIPT_DIR, ".podcast_skill_state.json")
 CORE_DATA_EPOCH = 978307200
@@ -440,7 +439,6 @@ def main():
             "phone": REPORT_PHONE,
             "signoff_name": REPORT_SIGNOFF_NAME,
             "label": REPORT_LABEL,
-            "email_client": REPORT_EMAIL_CLIENT,
             "timezone": os.environ.get("REPORT_TIMEZONE", "UTC"),
         },
     }
