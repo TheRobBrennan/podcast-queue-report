@@ -363,13 +363,13 @@ def build_html(d):
   .queue-summary h2 {{ margin: 0 0 4px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }}
   .queue-summary .big {{ font-size: 32px; font-weight: 700; }}
   .queue-summary .sub {{ color: #64748b; font-size: 14px; margin-top: 4px; }}
-  .cards {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; margin-bottom: 36px; }}
-  .card {{ background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
+  .cards {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 24px; margin-bottom: 36px; }}
+  .card {{ background: white; border-radius: 12px; padding: 22px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   .card-label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.6px; margin-bottom: 8px; }}
   .card-count-row {{ display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }}
   .card-count {{ font-size: 28px; font-weight: 700; line-height: 1; }}
   .card-count-unit {{ font-size: 13px; font-weight: 600; color: #94a3b8; }}
-  .card-sub {{ font-size: 13px; color: #64748b; line-height: 1.7; }}
+  .card-sub {{ font-size: 13px; color: #64748b; line-height: 1.7; margin-top: 4px; }}
   table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
   th {{ text-align: left; font-size: 12px; text-transform: uppercase; color: #94a3b8; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }}
   td {{ padding: 12px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: top; font-size: 14px; }}
