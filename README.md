@@ -108,13 +108,12 @@ agent working in this repo. Run `make help` any time for the full list.
 `npm start` is a shortcut for `make all` followed by opening the fresh HTML
 report in your browser, with a `time` around the whole thing.
 
-`chat`, `html`, `sms`, and `discord` each depend on `run`; `email` depends
-on `html` (so the HTML report already exists to attach). Calling any one of
-them alone re-queries the database fresh; `make all` only queries once and
-reuses that same snapshot for everything it does (important, since each
-query also advances the "since last check" stats window — you don't want
-`make all` to silently zero that out by running the query five times in a
-row).
+`chat`, `email`, `sms`, `html`, and `discord` all depend on `run`. Calling
+any one of them alone re-queries the database fresh; `make all` only
+queries once and reuses that same snapshot for everything it does
+(important, since each query also advances the "since last check" stats
+window — you don't want `make all` to silently zero that out by running
+the query five times in a row).
 
 `make open` uses the standard macOS `open` command, so it launches your
 actual default browser — but only when run from a real shell on the Mac
@@ -132,7 +131,7 @@ The Makefile is a thin wrapper — you can always call the Python directly:
 python3 podcast_summary.py > /tmp/run.json
 python3 render_report.py /tmp/run.json chat   # plain-text chat summary
 python3 render_report.py /tmp/run.json sms    # short SMS text
-python3 render_report.py /tmp/run.json email  # SUBJECT: ... / body
+python3 render_report.py /tmp/run.json email  # SUBJECT: ... / styled HTML body
 python3 render_report.py /tmp/run.json html > reports/podcast_report.html
 ```
 
@@ -145,7 +144,8 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
   2 hrs 38 mins 12 seconds") and episode/podcast titles link to their Apple
   Podcasts pages. Reads configuration from environment variables / `.env`.
 - `render_report.py` — renders that JSON into a chat summary, SMS text, email
-  (subject + body), or a styled standalone HTML report.
+  (subject + the same styled HTML as the html report), or a styled
+  standalone HTML report.
 - `reports/podcast_report.html` — the most recently generated HTML report.
 - `Makefile` — convenience commands wrapping the two scripts above; see
   "Quick commands" below.

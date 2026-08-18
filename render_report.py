@@ -240,30 +240,11 @@ def build_sms(d):
 
 def build_email(d):
     q = d["queue"]
-    p = d["played"]
     label = d.get("config", {}).get("label") or "Podcast Queue Report"
     subject = f'{label} — Grade {q["grade"]} ({q["days_behind_phrase"]})'
-    lines = []
-    lines.append(d["emoji_header"])
-    lines.append(f'{headline(q)} — Grade: {q["grade"]} 🎧')
-    lines.append("")
-    now_playing = now_playing_sentence(d)
-    if now_playing:
-        lines.append(now_playing)
-        lines.append("")
-    lines.append(up_next_sentence(d))
-    lines.append("")
-    lines.append("PLAYED")
-    for key, label in PLAYED_LABELS:
-        if key in p:
-            lines.append(f'{label}: {pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
-    lines.append("")
-    lines.append("Full episode-by-episode breakdown is attached as an HTML report.")
-    lines.append("")
-    signoff = d.get("config", {}).get("signoff_name")
-    if signoff:
-        lines.append(f"— {signoff}")
-    return subject, "\n".join(lines)
+    # Same experience as the standalone HTML report - no separate plain-text
+    # summary to keep in sync as build_html grows new sections.
+    return subject, build_html(d)
 
 def build_html(d):
     q = d["queue"]

@@ -7,11 +7,12 @@ in the format `render_report.py ... email` produces:
     ---
     <body>
 
+`body` is the same styled HTML as `render_report.py ... html` - the email
+is the web report, not a separate plain-text summary.
+
 Reads REPORT_EMAIL from .env (same minimal loader pattern as
 podcast_summary.py). Leave REPORT_EMAIL blank/unset to skip sending —
 this exits 0 so it doesn't break a `make all` chain.
-
-If reports/podcast_report.html exists, it's attached to the message.
 
 Usage:
     python3 render_report.py /tmp/podcast_run.json email | python3 scripts/send_email.py
@@ -23,7 +24,6 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HTML_REPORT_PATH = os.path.join(REPO_ROOT, "reports", "podcast_report.html")
 
 
 def _load_dotenv():
@@ -56,30 +56,23 @@ def main():
 
     first_line, _, rest = raw.partition("\n")
     subject = first_line.removeprefix("SUBJECT:").strip()
-    body = rest.split("---\n", 1)[-1] if "---\n" in rest else rest
+    body_html = rest.split("---\n", 1)[-1] if "---\n" in rest else rest
 
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as subject_f:
         subject_f.write(subject)
         subject_path = subject_f.name
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as body_f:
-        body_f.write(body)
+    with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False) as body_f:
+        body_f.write(body_html)
         body_path = body_f.name
-
-    attach_clause = ""
-    if os.path.exists(HTML_REPORT_PATH):
-        attach_clause = (
-            f'\n        make new attachment at newMessage with properties '
-            f'{{file:(POSIX file "{HTML_REPORT_PATH}")}}'
-        )
 
     script = f'''
 set subjectText to (read POSIX file "{subject_path}" as «class utf8»)
-set bodyText to (read POSIX file "{body_path}" as «class utf8»)
+set bodyHtml to (read POSIX file "{body_path}" as «class utf8»)
 tell application "Microsoft Outlook"
     activate
-    set newMessage to make new outgoing message with properties {{subject:subjectText, plain text content:bodyText}}
+    set newMessage to make new outgoing message with properties {{subject:subjectText, content:bodyHtml}}
     tell newMessage
-        make new to recipient at newMessage with properties {{email address:{{address:"{to_address}"}}}}{attach_clause}
+        make new to recipient at newMessage with properties {{email address:{{address:"{to_address}"}}}}
     end tell
     send newMessage
 end tell

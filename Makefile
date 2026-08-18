@@ -43,7 +43,7 @@ sms: run
 	@$(PYTHON) render_report.py $(RUN_JSON) sms | $(PYTHON) scripts/send_sms.py
 	@echo ""
 
-email: html
+email: run
 	@echo "📧 Sending email..."
 	@$(PYTHON) render_report.py $(RUN_JSON) email | $(PYTHON) scripts/send_email.py
 	@echo ""
@@ -57,7 +57,7 @@ html: run
 open: html
 	@open reports/podcast_report.html
 
-all: chat html email sms discord
+all: chat email sms html discord
 
 discord: run
 	@echo "💬 Posting to Discord..."
