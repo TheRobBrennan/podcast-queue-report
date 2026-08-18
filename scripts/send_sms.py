@@ -57,6 +57,8 @@ def main():
     script = f'''
 set bodyText to (read POSIX file "{body_path}" as «class utf8»)
 tell application "Messages"
+    activate
+    delay 1
     set targetService to 1st service whose service type = iMessage
     set targetBuddy to buddy "{phone}" of targetService
     send bodyText to targetBuddy
