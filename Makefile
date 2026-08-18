@@ -10,11 +10,11 @@ help:
 	@echo "  make setup             Copy .env.example -> .env (first run only)"
 	@echo "  make run               Query the Podcasts DB, write $(RUN_JSON)"
 	@echo "  make chat              Print the chat summary"
-	@echo "  make sms               Print the SMS text"
-	@echo "  make email             Print the email SUBJECT + body"
+	@echo "  make sms               Text the report via Messages.app (needs REPORT_PHONE in .env)"
+	@echo "  make email             Email the report via Outlook (needs REPORT_EMAIL in .env)"
 	@echo "  make html              Regenerate reports/podcast_report.html"
 	@echo "  make open              Regenerate the HTML report and open it in your browser"
-	@echo "  make all               Run once, then chat + sms + email + html"
+	@echo "  make all               Run once, then chat + html + email + sms + discord"
 	@echo "  make discord           Post the chat summary to Discord (needs DISCORD_WEBHOOK_URL in .env)"
 	@echo "  make unlock            Clear stale git lock files (see scripts/git_unlock.py)"
 	@echo "  make commit MSG='...'  Unlock, stage everything, and commit"
@@ -32,31 +32,37 @@ setup:
 	fi
 
 run:
-	@echo "📥 Querying Podcasts library..."
+	@echo "🎧 Catching up on your queue..."
 	@$(PYTHON) podcast_summary.py > $(RUN_JSON)
 
 chat: run
 	@$(PYTHON) render_report.py $(RUN_JSON) chat
 
 sms: run
-	@$(PYTHON) render_report.py $(RUN_JSON) sms
+	@echo "📱 Sending text..."
+	@$(PYTHON) render_report.py $(RUN_JSON) sms | $(PYTHON) scripts/send_sms.py
+	@echo ""
 
 email: run
-	@$(PYTHON) render_report.py $(RUN_JSON) email
+	@echo "📧 Sending email..."
+	@$(PYTHON) render_report.py $(RUN_JSON) email | $(PYTHON) scripts/send_email.py
+	@echo ""
 
 html: run
 	@echo "🌐 Writing HTML report..."
 	@$(PYTHON) render_report.py $(RUN_JSON) html > reports/podcast_report.html
 	@echo "✅ Wrote reports/podcast_report.html"
+	@echo ""
 
 open: html
 	@open reports/podcast_report.html
 
-all: chat sms email html
+all: chat email sms html discord
 
 discord: run
 	@echo "💬 Posting to Discord..."
 	@$(PYTHON) render_report.py $(RUN_JSON) discord | $(PYTHON) scripts/post_discord.py
+	@echo ""
 
 unlock:
 	$(PYTHON) scripts/git_unlock.py

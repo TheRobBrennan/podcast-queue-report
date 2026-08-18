@@ -240,62 +240,46 @@ def build_sms(d):
 
 def build_email(d):
     q = d["queue"]
-    p = d["played"]
     label = d.get("config", {}).get("label") or "Podcast Queue Report"
     subject = f'{label} — Grade {q["grade"]} ({q["days_behind_phrase"]})'
-    lines = []
-    lines.append(d["emoji_header"])
-    lines.append(f'{headline(q)} — Grade: {q["grade"]} 🎧')
-    lines.append("")
-    now_playing = now_playing_sentence(d)
-    if now_playing:
-        lines.append(now_playing)
-        lines.append("")
-    lines.append(up_next_sentence(d))
-    lines.append("")
-    lines.append("PLAYED")
-    for key, label in PLAYED_LABELS:
-        if key in p:
-            lines.append(f'{label}: {pluralize(p[key]["count"], "episode", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
-    lines.append("")
-    lines.append("Full episode-by-episode breakdown is attached as an HTML report.")
-    lines.append("")
-    signoff = d.get("config", {}).get("signoff_name")
-    if signoff:
-        lines.append(f"— {signoff}")
-    return subject, "\n".join(lines)
+    # Same experience as the standalone HTML report - no separate plain-text
+    # summary to keep in sync as build_html grows new sections.
+    return subject, build_html(d)
 
 def build_html(d):
     q = d["queue"]
     p = d["played"]
 
     def duration_html(total_fmt):
-        # fmt_duration joins "N\u00a0unit" pairs with plain spaces, so
-        # splitting on a plain space gives us each pair intact. When there
-        # are more than 3 (i.e. more granular than hr/min/sec), stack each
-        # on its own line instead of letting it wrap mid-sentence.
-        pairs = total_fmt.split(" ")
-        escaped = [html.escape(p) for p in pairs]
-        if len(escaped) > 3:
-            return "<br>".join(escaped)
-        return " ".join(escaped)
+        # fmt_duration joins "N\u00a0unit" pairs with plain (breakable)
+        # spaces between pairs and a non-breaking space within each pair,
+        # so this just lets the browser/client wrap it naturally instead of
+        # forcing one unit per line - that made card heights wildly
+        # inconsistent (1 line vs 5 lines) when two cards sit side by side
+        # in the same table row.
+        return html.escape(total_fmt)
 
     def stat_card(label, stats):
         noun = "episode" if stats["count"] == 1 else "episodes"
         return f'''
-        <div class="card">
-          <div class="card-label">{html.escape(label)}</div>
-          <div class="card-count-row">
-            <span class="card-count">{stats["count_fmt"]}</span>
-            <span class="card-count-unit">{noun}</span>
+        <td width="50%" valign="top" style="padding:0 8px 16px 0;">
+          <div style="background:#ffffff;border-radius:12px;padding:22px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.08);height:100%;box-sizing:border-box;">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#94a3b8;letter-spacing:0.6px;margin-bottom:8px;">{html.escape(label)}</div>
+            <div style="margin-bottom:8px;">
+              <span style="font-size:28px;font-weight:700;line-height:1;">{stats["count_fmt"]}</span>
+              <span style="font-size:13px;font-weight:600;color:#94a3b8;">{noun}</span>
+            </div>
+            <div style="font-size:13px;color:#64748b;line-height:1.7;margin-top:4px;">{duration_html(stats["total_fmt"])}</div>
           </div>
-          <div class="card-sub">{duration_html(stats["total_fmt"])}</div>
-        </div>'''
+        </td>'''
 
-    played_cards = ""
-    for key, label in PLAYED_LABELS:
-        if key in p:
-            played_cards += stat_card(label, p[key])
+    card_cells = [stat_card(label, p[key]) for key, label in PLAYED_LABELS if key in p]
+    card_rows = ""
+    for i in range(0, len(card_cells), 2):
+        pair = card_cells[i:i + 2]
+        if len(pair) == 1:
+            pair.append('<td width="50%" style="padding:0 8px 16px 0;"></td>')
+        card_rows += f"<tr>{''.join(pair)}</tr>"
 
     now_playing_data = d.get("now_playing")
 
@@ -315,22 +299,27 @@ def build_html(d):
         pub = datetime.datetime.fromisoformat(e["pubdate"]).replace(tzinfo=datetime.timezone.utc).astimezone(local_tz(d))
         is_playing = _is_now_playing(e)
         if is_playing:
-            badge = ' <span class="now-playing-badge">● NOW PLAYING</span>'
+            badge = ' <span style="display:inline-block;background:#d1fae5;color:#047857;font-size:10px;font-weight:700;letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;">● NOW PLAYING</span>'
         elif i == 0:
-            badge = ' <span class="up-next">▶ UP NEXT</span>'
+            badge = ' <span style="display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;">▶ UP NEXT</span>'
         else:
             badge = ""
         title_html = html.escape(e["title"])
         if e.get("episode_url"):
-            title_html = f'<a href="{html.escape(e["episode_url"])}" target="_blank">{title_html}</a>'
+            title_html = f'<a href="{html.escape(e["episode_url"])}" target="_blank" style="color:#1e293b;text-decoration:none;">{title_html}</a>'
         pod_html = html.escape(e["podcast"])
         if e.get("podcast_url"):
-            pod_html = f'<a href="{html.escape(e["podcast_url"])}" target="_blank">{pod_html}</a>'
+            pod_html = f'<a href="{html.escape(e["podcast_url"])}" target="_blank" style="color:#64748b;text-decoration:none;">{pod_html}</a>'
+        row_bg = "background:#f8fafc;" if (i == 0 or is_playing) else ""
+        remaining_html = (
+            f'<div style="color:#2563eb;font-size:12px;margin-top:2px;">{e["remaining_fmt"]} left</div>'
+            if e.get("in_progress") and e.get("remaining_fmt") else ""
+        )
         rows += f'''
-        <tr class="{"up-next-row" if (i == 0 or is_playing) else ""}">
-          <td class="ep-title">{title_html}{badge}<div class="ep-pod">{pod_html}</div></td>
-          <td class="ep-date" title="{pub.strftime("%a %b %-d, %-I:%M%p %Z")}">{fmt_relative(d, e["pubdate"])}</td>
-          <td class="ep-dur">{e["duration_fmt"]}{f'<div class="ep-left">{e["remaining_fmt"]} left</div>' if e.get("in_progress") and e.get("remaining_fmt") else ""}</td>
+        <tr style="{row_bg}">
+          <td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px;font-weight:600;">{title_html}{badge}<div style="font-weight:400;color:#64748b;font-size:12px;margin-top:2px;">{pod_html}</div></td>
+          <td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px;color:#475569;white-space:nowrap;" title="{pub.strftime("%a %b %-d, %-I:%M%p %Z")}">{fmt_relative(d, e["pubdate"])}</td>
+          <td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px;color:#475569;white-space:nowrap;">{e["duration_fmt"]}{remaining_html}</td>
         </tr>'''
 
     grade_color = grade_hex(q["grade"])
@@ -345,8 +334,12 @@ def build_html(d):
         if podcast_html and np.get("podcast_url"):
             podcast_html = f'<a href="{html.escape(np["podcast_url"])}" target="_blank">{podcast_html}</a>'
         now_playing_html = (
-            '<div class="now-playing"><span class="dot"></span>'
-            f'<span class="text">&#9654;&#65039; <b>Now playing:</b> {title_html}'
+            '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;'
+            'padding:14px 20px;margin-bottom:32px;">'
+            '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+            'background:#10b981;margin-right:10px;">&nbsp;</span>'
+            f'<span style="font-size:14px;color:#065f46;">&#9654;&#65039; '
+            f'<b style="color:#064e3b;">Now playing:</b> {title_html}'
             + (f' &mdash; {podcast_html}' if podcast_html else "")
             + f' ({np["remaining_fmt"]} left)</span></div>'
         )
@@ -366,69 +359,34 @@ def build_html(d):
 <head>
 <meta charset="utf-8">
 <title>Podcast Queue Report</title>
-<style>
-  body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; margin: 0; padding: 32px; color: #1e293b; }}
-  .container {{ max-width: 720px; margin: 0 auto; }}
-  .emoji-strip {{ font-size: 28px; letter-spacing: 2px; text-align: center; margin-bottom: 8px; line-height: 1.4; }}
-  .headline {{ text-align: center; font-size: 20px; font-weight: 600; margin-bottom: 28px; }}
-  .grade-badge {{ display: inline-block; background: {grade_color}; color: {grade_text}; border-radius: 8px; padding: 2px 12px; font-weight: 700; }}
-  .grade-line {{ white-space: nowrap; }}
-  .now-playing {{ background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 14px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }}
-  .now-playing .dot {{ width: 10px; height: 10px; border-radius: 50%; background: #10b981; flex-shrink: 0; animation: pulse 1.6s ease-in-out infinite; }}
-  @keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.35; }} }}
-  .now-playing .text {{ font-size: 14px; color: #065f46; }}
-  .now-playing .text b {{ color: #064e3b; }}
-  .queue-summary {{ background: white; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-  .queue-summary h2 {{ margin: 0 0 4px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }}
-  .queue-summary .big {{ font-size: 32px; font-weight: 700; }}
-  .queue-summary .sub {{ color: #64748b; font-size: 14px; margin-top: 4px; }}
-  .cards {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 28px; }}
-  .card {{ background: white; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-  .card-label {{ font-size: 11px; font-weight: 600; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.6px; margin-bottom: 8px; }}
-  .card-count-row {{ display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }}
-  .card-count {{ font-size: 28px; font-weight: 700; line-height: 1; }}
-  .card-count-unit {{ font-size: 13px; font-weight: 600; color: #94a3b8; }}
-  .card-sub {{ font-size: 13px; color: #64748b; line-height: 1.7; }}
-  table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }}
-  th {{ text-align: left; font-size: 12px; text-transform: uppercase; color: #94a3b8; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; }}
-  td {{ padding: 12px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: top; font-size: 14px; }}
-  .ep-title {{ font-weight: 600; }}
-  .ep-title a {{ color: #1e293b; text-decoration: none; }}
-  .ep-title a:hover {{ text-decoration: underline; }}
-  .ep-pod {{ font-weight: 400; color: #64748b; font-size: 12px; margin-top: 2px; }}
-  .ep-left {{ color: #2563eb; font-size: 12px; margin-top: 2px; }}
-  .ep-pod a {{ color: #64748b; text-decoration: none; }}
-  .ep-pod a:hover {{ text-decoration: underline; }}
-  .up-next {{ display: inline-block; background: #dbeafe; color: #1d4ed8; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }}
-  .now-playing-badge {{ display: inline-block; background: #d1fae5; color: #047857; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }}
-  .up-next-row {{ background: #f8fafc; }}
-  .ep-date, .ep-dur {{ color: #475569; white-space: nowrap; }}
-  .footer {{ text-align: center; color: #94a3b8; font-size: 12px; margin-top: 24px; }}
-</style>
 </head>
-<body>
-<div class="container">
-  <div class="emoji-strip">{d["emoji_header"]}</div>
-  <div class="headline">{headline(q)} &mdash; <span class="grade-line">Grade: <span class="grade-badge">{q["grade"]}</span> 🎧</span></div>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;margin:0;padding:32px;color:#1e293b;">
+<div style="max-width:720px;margin:0 auto;">
+  <div style="font-size:28px;letter-spacing:2px;text-align:center;margin-bottom:8px;line-height:1.4;">{d["emoji_header"]}</div>
+  <div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:36px;">{headline(q)} &mdash; <span style="white-space:nowrap;">Grade: <span style="display:inline-block;background:{grade_color};color:{grade_text};border-radius:8px;padding:2px 12px;font-weight:700;">{q["grade"]}</span> 🎧</span></div>
 
   {now_playing_html}
 
-  <div class="queue-summary">
-    <h2>Unplayed</h2>
-    <div class="big">{q["count_fmt"]} episodes &middot; {q["total_fmt"]}</div>
-    <div class="sub">{oldest_html}</div>
+  <div style="background:#ffffff;border-radius:12px;padding:20px 24px;margin-bottom:32px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+    <h2 style="margin:0 0 4px;font-size:15px;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;">Unplayed</h2>
+    <div style="font-size:32px;font-weight:700;">{q["count_fmt"]} episodes &middot; {q["total_fmt"]}</div>
+    <div style="color:#64748b;font-size:14px;margin-top:4px;">{oldest_html}</div>
   </div>
 
-  <div class="cards">
-    {played_cards}
-  </div>
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+    {card_rows}
+  </table>
 
-  <table>
-    <tr><th>Episode</th><th>Published</th><th>Length</th></tr>
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+    <tr>
+      <th style="text-align:left;font-size:12px;text-transform:uppercase;color:#94a3b8;padding:12px 16px;border-bottom:1px solid #e2e8f0;">Episode</th>
+      <th style="text-align:left;font-size:12px;text-transform:uppercase;color:#94a3b8;padding:12px 16px;border-bottom:1px solid #e2e8f0;">Published</th>
+      <th style="text-align:left;font-size:12px;text-transform:uppercase;color:#94a3b8;padding:12px 16px;border-bottom:1px solid #e2e8f0;">Length</th>
+    </tr>
     {rows}
   </table>
 
-  <div class="footer">Generated {human_date(d, d["generated_at"])}</div>
+  <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated {human_date(d, d["generated_at"])}</div>
 </div>
 </body>
 </html>'''

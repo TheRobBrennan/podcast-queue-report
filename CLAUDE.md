@@ -73,16 +73,19 @@ minimal built-in `.env` loader. Nothing to `pip install`.
 ## Conventions
 
 - **Env-driven, nothing hardcoded.** Delivery targets (`REPORT_EMAIL`,
-  `REPORT_PHONE`, `REPORT_EMAIL_CLIENT`, the Discord webhook, etc.) all come
-  from `.env` / the JSON `config` block — never hardcode a personal email,
-  phone number, or webhook URL into the Python or into a skill.
+  `REPORT_PHONE`, the Discord webhook, etc.) all come from `.env` / the
+  JSON `config` block — never hardcode a personal email, phone number, or
+  webhook URL into the Python or into a skill.
 - **One DB query per report run.** `podcast_summary.py` advances
   `.podcast_skill_state.json`'s "since last check" timestamp every time it
   runs — don't call it more than once per logical report (`make all`, not
   four separate `make chat && make sms && ...`).
-- **Delivery (email/text) always requires the user's explicit go-ahead for
-  that specific run** — a standing schedule is not consent. This is handled
-  by the agent following `SKILL.md`, not by the Python.
+- **Delivery (email/text/Discord) is automatic, gated by `.env`.**
+  `make email` / `make sms` / `make discord` each send for real via
+  `scripts/send_email.py` (Outlook), `scripts/send_sms.py` (Messages.app),
+  and `scripts/post_discord.py` (webhook) - and each skips cleanly if its
+  destination variable is blank. There's no per-run confirmation step;
+  consent is expressed by what's configured in `.env`. See `SKILL.md`.
 - No test suite exists. Verify changes to `podcast_summary.py` /
   `render_report.py` by actually running `make all` against the real
   library and eyeballing the output — there's no library to fake it with, so
