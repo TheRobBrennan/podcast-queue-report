@@ -13,6 +13,6 @@
   },
   "license": "MIT",
   "scripts": {
-    "start": "time (make html && make discord && open reports/podcast_report.html)"
+    "start": "time (make all) && open reports/podcast_report.html"
   }
 }
