@@ -44,7 +44,6 @@ email: run
 	$(PYTHON) render_report.py $(RUN_JSON) email
 
 html: run
-	@mkdir -p reports
 	$(PYTHON) render_report.py $(RUN_JSON) html > reports/podcast_report.html
 	@echo "Wrote reports/podcast_report.html"
 
