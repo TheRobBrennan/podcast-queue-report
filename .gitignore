@@ -5,3 +5,5 @@ __pycache__/
 .env
 *.bak
 *.stale
+.DS_Store
+reports/*.html
