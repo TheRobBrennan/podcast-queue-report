@@ -192,74 +192,65 @@ def get_now_playing(cur):
 def connect():
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
 
-LATEST_EPISODES_LIMIT = 13
+# Fixed at Rob's explicit request on 2026-08-18: he'd rather trust a hard
+# baseline than any rolling window, since this library has old episodes
+# stuck marked unplayed that he considers already handled on his end (his
+# words: "anything old that appears unplayed is a bug from my end"). Never
+# advance this automatically - only move it if Rob explicitly asks to reset
+# the baseline again.
+BASELINE_DATE = datetime.datetime(2026, 8, 18, tzinfo=LOCAL_TZ).astimezone(datetime.timezone.utc).replace(tzinfo=None)
 
-def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
-    """Matches Apple's own "Latest Episodes" view: a rolling window of the
-    `limit` most recent never-started episodes across subscribed podcasts,
-    one per podcast (its single newest unplayed episode), sorted by publish
-    date — PLUS any episode that has been started but not finished, which
-    stays in the view no matter how far past `limit` its publish date has
-    fallen. Three earlier heuristics were tried and disproven against
-    actual screenshots of the Latest Episodes view:
+def get_unplayed_queue(cur, now_dt, baseline=BASELINE_DATE):
+    """The unplayed queue: every never-started episode published on or
+    after `baseline` across subscribed podcasts (no per-podcast dedup, no
+    item-count cap - if a show has published three unplayed episodes since
+    the baseline, all three appear) — PLUS any episode that has been
+    started but not finished, which stays in the view no matter how far
+    before `baseline` its publish date falls.
+
+    This intentionally no longer tries to replicate Apple's own "Latest
+    Episodes" view - it did, through several reverse-engineered iterations
+    that kept "working" against one screenshot and breaking against the
+    next:
       1. A 20-hour publish-gap cluster — wrong because shows published well
          over 20h apart were still both present, one per show.
-      2. Every unplayed episode, one per podcast, uncapped — wrong because
-         it surfaces episodes from long-dormant subscriptions going back
-         years; the real view only ever showed the ~12 most recent.
-      3. A flat `limit`-most-recent cap over *all* unplayed episodes —
-         wrong because it dropped a partially-played episode (Analog(ue),
-         "I'm the Big Dog": ZPLAYSTATE=1, playhead 3521s of 4787s) that
-         sat one slot past the cap at 13th-most-recent, while the real
-         view still showed it, pinned at the top of the oldest-first list
-         with its progress bar. The 12 never-started episodes ranked ahead
-         of it were all present too, so it is carried *in addition to* the
-         cap, not counted against it.
-      4. Pinning *every* started-but-unfinished episode — wrong in the
-         other direction. This library holds four abandoned ZPLAYSTATE=1
-         episodes last touched between 5 and 26 months ago (Ghost Story
-         "The House Next Door", Morbid "Listener Tales 83", and two from
-         Feb 2026); none appear in the real view, but pinning them all
-         dragged the oldest item back to Oct 2023 — "2 years 9 months
-         behind", grade F, against the A-/B+ the view actually implies.
+      2. Every unplayed episode, one per podcast, uncapped — dismissed at
+         the time for surfacing long-dormant subscriptions, but this was
+         actually closer to right than what replaced it - it just needed a
+         hard floor, not an item-count one.
+      3. A flat count cap (first 12, later corrected to 13) over the
+         never-started episodes — repeatedly "confirmed" by counting
+         forward from a screenshot, and repeatedly wrong the next time a
+         screenshot was taken, because Apple's real UI isn't counting
+         items - it's filtering by a "Sort By" time window (1 Week / 2
+         Weeks / 1 Month / All, screenshotted directly on Rob's Mac).
+      4. Pinning *every* started-but-unfinished episode regardless of age —
+         wrong in the other direction. This library holds four abandoned
+         ZPLAYSTATE=1 episodes last touched between 5 and 26 months ago
+         (Ghost Story "The House Next Door", Morbid "Listener Tales 83",
+         and two from Feb 2026); none appear in the real view, but pinning
+         them all dragged the oldest item back to Oct 2023 — "2 years 9
+         months behind", grade F, against the A-/B+ the view actually
+         implies.
       5. Requiring e.ZLISTENNOWEPISODE=1 on never-started candidates —
-         tried when a live report was missing a YAP episode that a real
-         screenshot showed present, while including a NASA's Curious
-         Universe episode the screenshot did NOT show. The flag looked
-         like the answer (NULL on the NASA episode, set on the YAP one)
-         but a follow-up screenshot minutes later disproved it: it showed
-         *both* episodes present simultaneously, 13 never-started items
-         total rather than a 12-item swap. The flag never changed - the
-         cap itself was just wrong.
-    The count is 13, not 12: rank every never-started episode by ZPUBDATE
-    alone, one per podcast, no flag needed - confirmed by a screenshot
-    where the oldest item at the top of the list (oldest-first sort
-    setting) matched exactly the 13th-most-recent unplayed episode across
-    all subscribed shows, with the next-oldest excluded. (An earlier
-    screenshot had suggested 12; a later one caught two more episodes -
-    NASA's and YAP's - present that the 12-cap was silently dropping.
-    Re-verify against a fresh screenshot before trusting this number again
-    if it ever looks off - the exact count isn't something to assume.)
+         looked promising (NULL on an episode the real view excluded, set
+         on one it included) but disproven by a follow-up screenshot: both
+         episodes were actually present simultaneously. The flag was a red
+         herring; the count itself was the bug.
+    Rather than keep chasing Apple's own view (which itself matches a
+    "Sort By: 1 Month" rolling window, confirmed via screenshot but not
+    what Rob actually wants long-term), Rob asked for a fixed baseline
+    instead - see BASELINE_DATE above - with no per-podcast dedup and no
+    cap, so nothing is ever silently hidden again.
 
-    So a started episode is pinned only while it is still *active*: its
-    ZLASTDATEPLAYED must be no older than the window the view already
-    covers (the oldest never-started episode in the capped list), with a
+    A started episode is pinned only while it is still *active*: its
+    ZLASTDATEPLAYED must be no older than the baseline itself, with a
     24-hour floor so an episode paused yesterday survives a day whose new
     releases are only a few hours old. ZPLAYSTATE alone cannot carry this
     distinction — all five started episodes here are ZPLAYSTATE=1,
-    including the abandoned ones. ZPLAYSTATESOURCE (9 for the live
-    episode, 3/4 for the stale ones) and ZLISTENNOWEPISODE looked like
-    candidates too, but each matched one stale episode as well, so
-    recency is the only separator this library actually supports.
-
-    Whether Apple's real rule is this pinning behavior or simply a larger
-    cap could not be distinguished from a single library — both fit the
-    observed item count — but pinning is the safer of the two, since it
-    also holds when the started episode is far older than the cap window,
-    which is exactly when losing it hurts most (it is the episode driving
-    the "behind" figure and the grade). Re-verify against a screenshot of
-    the real Latest Episodes view if the counts ever look off."""
+    including the abandoned ones."""
     now_cd = dt_to_cd(now_dt)
+    baseline_cd = dt_to_cd(baseline)
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
@@ -272,38 +263,39 @@ def get_unplayed_queue(cur, now_dt, limit=LATEST_EPISODES_LIMIT):
 
     fresh = []
     started = []
-    seen_fresh = set()
     seen_started = set()
     for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played in rows:
         is_started = playstate == 1 or (playhead or 0) > 0
-        bucket, seen = (started, seen_started) if is_started else (fresh, seen_fresh)
-        if pod_pk in seen:
+        # Never-started candidates must fall on/after the baseline; started
+        # episodes are exempt (pinning has its own recency rule below,
+        # independent of the baseline).
+        if not is_started and pub < baseline_cd:
             continue
-        seen.add(pod_pk)
         episode_url = f"{pod_url}?i={int(track_id)}" if pod_url and track_id else pod_url
-        bucket.append({
+        entry = {
             "title": title, "podcast": pod, "duration": dur or 0, "pubdate": cd_to_dt(pub),
             "playhead": playhead or 0, "in_progress": is_started,
             "last_played": cd_to_dt(last_played) if last_played else None,
             "episode_url": episode_url, "podcast_url": pod_url, "podcast_pk": pod_pk,
-        })
-        # No early break: started episodes can sit past the cap, so the whole
-        # result set is scanned and `fresh` is capped below instead.
+        }
+        if is_started:
+            if pod_pk in seen_started:
+                continue
+            seen_started.add(pod_pk)
+            started.append(entry)
+        else:
+            # No dedup here - every never-started episode since baseline
+            # shows, even multiple from the same podcast.
+            fresh.append(entry)
 
-    fresh = fresh[:limit]
     # A started episode stays only while still active — see the docstring.
-    active_cutoff = min(
-        [now_dt - datetime.timedelta(days=1)] + [e["pubdate"] for e in fresh]
-    )
+    active_cutoff = min(now_dt - datetime.timedelta(days=1), baseline)
     active = [
         e for e in started
         if e["last_played"] and e["last_played"] >= active_cutoff
     ]
 
-    # One row per podcast overall, preferring the started episode — that's
-    # the one Podcasts shows (with its progress bar) when a show has both.
-    active_pods = {e["podcast_pk"] for e in active}
-    queue = active + [e for e in fresh if e["podcast_pk"] not in active_pods]
+    queue = active + fresh
     queue.sort(key=lambda e: e["pubdate"], reverse=True)
     return queue
 
