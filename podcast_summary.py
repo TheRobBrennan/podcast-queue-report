@@ -97,6 +97,18 @@ def fmt_duration(seconds):
 def fmt_num(n):
     return f"{int(n):,}"
 
+def artwork_url(template, size=300):
+    """Fills in Apple's {w}x{h}bb.{f} artwork template (ZARTWORKTEMPLATEURL)
+    at a given square size, requesting jpg regardless of the source format —
+    the CDN transcodes on the fly. Returns None if there's no template
+    (a podcast added before Apple started populating this column, or one
+    whose feed never supplied artwork)."""
+    if not template:
+        return None
+    return (template.replace("{w}", str(size))
+                     .replace("{h}", str(size))
+                     .replace("{f}", "jpg"))
+
 def fmt_days_behind(seconds, has_queue):
     """Returns (amount, phrase) for how far behind the oldest unplayed
     episode is. `amount` is fmt_duration's full-precision span alone
@@ -160,28 +172,42 @@ def get_now_playing(cur):
     display_title = title
     episode_url = None
     podcast_url = None
+    artwork = None
     cur.execute(
-        "select e.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID, e.ZPLAYHEAD, e.ZDURATION "
+        "select e.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID, e.ZPLAYHEAD, e.ZDURATION, "
+        "p.ZARTWORKTEMPLATEURL "
         "from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK "
         "where p.ZTITLE = ? and e.ZPLAYSTATE = 1 limit 1",
         (podcast,),
     )
     row = cur.fetchone()
     if row:
-        db_title, pod_url, track_id, db_playhead, db_duration = row
+        db_title, pod_url, track_id, db_playhead, db_duration, artwork_template = row
         display_title = db_title or title
         podcast_url = pod_url
         episode_url = f"{pod_url}?i={int(track_id)}" if pod_url and track_id else pod_url
+        artwork = artwork_url(artwork_template)
         if db_duration:
             elapsed = db_playhead or 0
             duration = db_duration
             remaining = max(duration - elapsed, 0)
+
+    if artwork is None and podcast:
+        # The ZPLAYSTATE=1 lookup above can come up empty (e.g. mid-chapter
+        # title drift never matched a stored episode row) - fall back to
+        # the podcast's own artwork by title alone so Now Playing still
+        # gets an image instead of going without.
+        cur.execute("select ZARTWORKTEMPLATEURL from ZMTPODCAST where ZTITLE = ? limit 1", (podcast,))
+        fallback = cur.fetchone()
+        if fallback:
+            artwork = artwork_url(fallback[0])
 
     return {
         "title": display_title,
         "podcast": podcast,
         "episode_url": episode_url,
         "podcast_url": podcast_url,
+        "artwork_url": artwork,
         "elapsed_seconds": elapsed,
         "duration_seconds": duration,
         "elapsed_fmt": fmt_duration(elapsed),
@@ -269,7 +295,7 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
-               e.ZLASTDATEPLAYED
+               e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
           and e.ZENTITLEMENTSTATE=0
@@ -280,7 +306,7 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
     fresh = []
     started = []
     seen_started = set()
-    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played in rows:
+    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played, artwork_template in rows:
         is_started = playstate == 1 or (playhead or 0) > 0
         # Never-started candidates must fall inside the window; started
         # episodes are exempt (pinning has its own recency rule below,
@@ -293,6 +319,7 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
             "playhead": playhead or 0, "in_progress": is_started,
             "last_played": cd_to_dt(last_played) if last_played else None,
             "episode_url": episode_url, "podcast_url": pod_url, "podcast_pk": pod_pk,
+            "artwork_url": artwork_url(artwork_template),
         }
         if is_started:
             if pod_pk in seen_started:
@@ -444,6 +471,7 @@ def main():
                 {"title": e["title"], "podcast": e["podcast"], "duration_fmt": fmt_duration(e["duration"]),
                  "pubdate": e["pubdate"].isoformat(), "episode_url": e["episode_url"],
                  "podcast_url": e["podcast_url"], "in_progress": e["in_progress"],
+                 "artwork_url": e["artwork_url"],
                  "remaining_fmt": fmt_duration(max((e["duration"] or 0) - (e["playhead"] or 0), 0))
                                   if e["in_progress"] else None}
                 for e in queue_oldest_first

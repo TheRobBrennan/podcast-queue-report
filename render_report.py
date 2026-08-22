@@ -215,6 +215,10 @@ def build_discord(d):
                 "inline": True,
             })
 
+    # Prefer whatever's actually playing; fall back to the up-next episode
+    # so the embed still has a thumbnail when nothing's currently playing.
+    thumbnail_url = (np or {}).get("artwork_url") or (q["episodes"][0].get("artwork_url") if q["episodes"] else None)
+
     embed = {
         "title": f'{d["emoji_header"]}',
         "description": description,
@@ -223,6 +227,8 @@ def build_discord(d):
         "footer": {"text": "Podcast Queue Report"},
         "timestamp": d["generated_at"],
     }
+    if thumbnail_url:
+        embed["thumbnail"] = {"url": thumbnail_url}
     return {"embeds": [embed]}
 
 def build_sms(d):
@@ -301,6 +307,16 @@ def build_html(d):
         return (now_playing_data.get("title") == e.get("title")
                 and now_playing_data.get("podcast") == e.get("podcast"))
 
+    def artwork_img(url, size=44, link=None):
+        if not url:
+            return ""
+        img = (f'<img src="{html.escape(url)}" width="{size}" height="{size}" alt="" '
+               f'style="width:{size}px;height:{size}px;border-radius:8px;display:block;'
+               f'object-fit:cover;">')
+        if link:
+            return f'<a href="{html.escape(link)}" target="_blank">{img}</a>'
+        return img
+
     rows = ""
     for i, e in enumerate(q["episodes"]):
         pub = datetime.datetime.fromisoformat(e["pubdate"]).replace(tzinfo=datetime.timezone.utc).astimezone(local_tz(d))
@@ -324,7 +340,8 @@ def build_html(d):
         )
         rows += f'''
         <tr style="{row_bg}">
-          <td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px;font-weight:600;">{title_html}{badge}<div style="font-weight:400;color:#64748b;font-size:12px;margin-top:2px;">{pod_html}</div></td>
+          <td style="padding:12px 8px 12px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;width:44px;">{artwork_img(e.get("artwork_url"), link=e.get("episode_url") or e.get("podcast_url"))}</td>
+          <td style="padding:12px 16px 12px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px;font-weight:600;">{title_html}{badge}<div style="font-weight:400;color:#64748b;font-size:12px;margin-top:2px;">{pod_html}</div></td>
           <td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px;color:#475569;white-space:nowrap;" title="{pub.strftime("%a %b %-d, %-I:%M%p %Z")}">{fmt_relative(d, e["pubdate"])}</td>
           <td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;vertical-align:top;font-size:14px;color:#475569;white-space:nowrap;">{e["duration_fmt"]}{remaining_html}</td>
         </tr>'''
@@ -340,15 +357,17 @@ def build_html(d):
         podcast_html = html.escape(np["podcast"]) if np["podcast"] else ""
         if podcast_html and np.get("podcast_url"):
             podcast_html = f'<a href="{html.escape(np["podcast_url"])}" target="_blank">{podcast_html}</a>'
+        now_playing_artwork = artwork_img(np.get("artwork_url"), size=48, link=np.get("episode_url") or np.get("podcast_url"))
         now_playing_html = (
             '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;'
-            'padding:14px 20px;margin-bottom:32px;">'
-            '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+            'padding:14px 20px;margin-bottom:32px;display:flex;align-items:center;gap:14px;">'
+            + now_playing_artwork +
+            '<div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
             'background:#10b981;margin-right:10px;">&nbsp;</span>'
             f'<span style="font-size:14px;color:#065f46;">&#9654;&#65039; '
             f'<b style="color:#064e3b;">Now playing:</b> {title_html}'
             + (f' &mdash; {podcast_html}' if podcast_html else "")
-            + f' ({np["remaining_fmt"]} left)</span></div>'
+            + f' ({np["remaining_fmt"]} left)</span></div></div>'
         )
     else:
         now_playing_html = ""
@@ -386,7 +405,8 @@ def build_html(d):
 
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
     <tr>
-      <th style="text-align:left;font-size:12px;text-transform:uppercase;color:#94a3b8;padding:12px 16px;border-bottom:1px solid #e2e8f0;">Episode</th>
+      <th style="padding:12px 8px 12px 16px;border-bottom:1px solid #e2e8f0;width:44px;"></th>
+      <th style="text-align:left;font-size:12px;text-transform:uppercase;color:#94a3b8;padding:12px 16px 12px 8px;border-bottom:1px solid #e2e8f0;">Episode</th>
       <th style="text-align:left;font-size:12px;text-transform:uppercase;color:#94a3b8;padding:12px 16px;border-bottom:1px solid #e2e8f0;">Published</th>
       <th style="text-align:left;font-size:12px;text-transform:uppercase;color:#94a3b8;padding:12px 16px;border-bottom:1px solid #e2e8f0;">Length</th>
     </tr>
