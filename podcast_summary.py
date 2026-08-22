@@ -241,6 +241,18 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
          includes yesterday's episodes) as correct the moment the count
          dropped to 7. Only per-podcast dedup, confirmed separately, was
          worth keeping from that detour.
+      7. Not filtering on entitlement - a never-started, in-window episode
+         can still be one Rob can't actually play: e.ZENTITLEMENTSTATE=2 /
+         e.ZPRICETYPE='PSUB' marks a paid-subscriber-exclusive bonus
+         episode whose metadata Podcasts cached from the feed without Rob
+         being entitled to it (caught via screenshot: a National Park
+         After Dark Patreon bonus episode counted as a 17th item while the
+         real "Latest Episodes" view topped out at 16 - Rob confirmed he
+         hadn't played or dismissed it on any device). Apple's own UI
+         won't surface content it won't let you play. Every entitled
+         episode in the library has ZENTITLEMENTSTATE=0; every PSUB one
+         has 2 - no other value appears, so this is a clean exclusion
+         rather than another heuristic guess.
 
     A started episode is pinned only while it is still *active*: its
     ZLASTDATEPLAYED must be no older than the window itself (the oldest
@@ -260,6 +272,7 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
                e.ZLASTDATEPLAYED
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
+          and e.ZENTITLEMENTSTATE=0
         order by e.ZPUBDATE desc
     ''', (now_cd,))
     rows = cur.fetchall()
