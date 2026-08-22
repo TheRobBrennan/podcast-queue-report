@@ -120,20 +120,22 @@ def headline(q):
 
 
 def now_playing_sentence(d):
+    """Just the episode detail — the section header is added by
+    build_chat_summary so the same sentence stays reusable without a
+    baked-in label."""
     np = d.get("now_playing")
     if not np:
         return None
     where = f' on {np["podcast"]}' if np["podcast"] else ""
-    return f'▶️ Now playing: "{np["title"]}"{where} — {np["remaining_fmt"]} left'
+    return f'"{np["title"]}"{where} — {np["remaining_fmt"]} left'
 
 def up_next_sentence(d):
     q = d["queue"]
     if not q["episodes"]:
         return "The queue is empty — you're all caught up!"
     ep = q["episodes"][0]
-    return (f'There are currently {pluralize(q["count"], "episode", q["count_fmt"])} in the queue for a total time of '
-            f'{q["total_fmt"]} — with the next episode to complete being "{ep["title"]}" '
-            f'from {fmt_relative(d, ep["pubdate"])}, {q["up_next_remaining_fmt"]} left to finish playing.')
+    return (f'{pluralize(q["count"], "episode", q["count_fmt"])} in the queue · {q["total_fmt"]} total\n'
+            f'"{ep["title"]}" from {fmt_relative(d, ep["pubdate"])} — {q["up_next_remaining_fmt"]} left to finish')
 
 def build_chat_summary(d):
     q = d["queue"]
@@ -144,14 +146,19 @@ def build_chat_summary(d):
     lines.append("")
     now_playing = now_playing_sentence(d)
     if now_playing:
+        lines.append("▶️  NOW PLAYING")
         lines.append(now_playing)
         lines.append("")
+    lines.append("📥  UP NEXT")
     lines.append(up_next_sentence(d))
     lines.append("")
-    lines.append("Played:")
-    for key, label in PLAYED_LABELS:
-        if key in p:
-            lines.append(f'  {label}: {pluralize(p[key]["count"], "ep", p[key]["count_fmt"])}, {p[key]["total_fmt"]}')
+    played_rows = [(key, label) for key, label in PLAYED_LABELS if key in p]
+    if played_rows:
+        lines.append("📊  PLAYED")
+        label_width = max(len(label) for _, label in played_rows)
+        for key, label in played_rows:
+            stats = p[key]
+            lines.append(f'  {label.ljust(label_width)}   {pluralize(stats["count"], "ep", stats["count_fmt"])}, {stats["total_fmt"]}')
     return "\n".join(lines)
 
 def _discord_link(text, url):
