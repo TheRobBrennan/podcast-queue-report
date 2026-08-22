@@ -59,6 +59,19 @@ minimal built-in `.env` loader. Nothing to `pip install`.
   without the date prefix.
 - **Never commit directly to `main`.** Branch off `main`, open a PR when
   ready.
+- **Include a screenshot in the PR for any visible-output change** (chat/
+  terminal, HTML, email, SMS, Discord). Generate it headlessly - don't rely
+  on the interactive Simulator/screen-recording permission:
+  - HTML/email: `make html`, then screenshot the file with headless Chrome,
+    e.g. `google-chrome --headless --disable-gpu --screenshot=out.png
+    --window-size=900,2400 file:///path/to/reports/podcast_report.html`.
+  - Chat/terminal/SMS: capture the text output (`make chat` etc.), wrap it
+    in a small dark-background/monospace HTML page, then screenshot that
+    the same way - there's no real terminal window to capture headlessly.
+  Save the PNG under `assets/`, commit it on the PR branch, and embed it in
+  the PR body via the raw GitHub URL (`https://raw.githubusercontent.com/
+  TheRobBrennan/podcast-queue-report/<branch>/assets/<file>.png`) - a
+  relative path or `../blob/...` link does not resolve in a PR body.
 - This repo's working copy sometimes lives on a FUSE-backed mount that
   allows renames but rejects deletes, which leaves stale
   `.git/index.lock`/`tmp_obj_*` files behind and makes plain `git` commands

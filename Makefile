@@ -34,9 +34,11 @@ setup:
 run:
 	@echo "🎧 Catching up on your queue..."
 	@$(PYTHON) podcast_summary.py > $(RUN_JSON)
+	@echo ""
 
 chat: run
 	@$(PYTHON) render_report.py $(RUN_JSON) chat
+	@echo ""
 
 sms: run
 	@echo "📱 Sending text..."
