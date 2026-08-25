@@ -10,6 +10,31 @@ PLAYED_LABELS = [
 ]
 
 
+def _matches_now_playing(np, ep):
+    """True if `ep` (a queue episode dict) is the same episode as `np`
+    (the now_playing dict). Prefer matching by episode_url (stable
+    identity from the store link); title/podcast is only a fallback for
+    episodes with no store link populated."""
+    if not np:
+        return False
+    if np.get("episode_url") and ep.get("episode_url"):
+        return np["episode_url"] == ep["episode_url"]
+    return np.get("title") == ep.get("title") and np.get("podcast") == ep.get("podcast")
+
+
+def _next_up_episode(d):
+    """The episode to present as 'up next': the head of the queue, unless
+    that's the episode already playing - in which case the one after it,
+    so Now Playing and Up Next never name the identical episode. Returns
+    None if every queue episode is the one currently playing (a
+    single-episode queue that's mid-play)."""
+    np = d.get("now_playing")
+    for ep in d["queue"]["episodes"]:
+        if not _matches_now_playing(np, ep):
+            return ep
+    return None
+
+
 def wrap_duration(total_fmt, units_per_line=2):
     """Groups an already-formatted duration string (e.g. "1 year 1 week 1
     day 9 hrs 25 mins 28 seconds", from podcast_summary.fmt_duration) into
@@ -133,9 +158,13 @@ def up_next_sentence(d):
     q = d["queue"]
     if not q["episodes"]:
         return "The queue is empty — you're all caught up!"
-    ep = q["episodes"][0]
+    ep = _next_up_episode(d)
+    if not ep:
+        return (f'{pluralize(q["count"], "episode", q["count_fmt"])} in the queue · {q["total_fmt"]} total\n'
+                f"Nothing else queued — you're mid-episode on the only one left!")
+    remaining = ep["remaining_fmt"] if ep.get("in_progress") and ep.get("remaining_fmt") else ep["duration_fmt"]
     return (f'{pluralize(q["count"], "episode", q["count_fmt"])} in the queue · {q["total_fmt"]} total\n'
-            f'"{ep["title"]}" from {fmt_relative(d, ep["pubdate"])} — {q["up_next_remaining_fmt"]} left to finish')
+            f'"{ep["title"]}" from {fmt_relative(d, ep["pubdate"])} — {remaining} left to finish')
 
 def build_chat_summary(d):
     q = d["queue"]
@@ -181,8 +210,8 @@ def build_discord(d):
         title_link = _discord_link(f'"{np["title"]}"', np.get("episode_url"))
         where = f' — {_discord_link(np["podcast"], np.get("podcast_url"))}' if np["podcast"] else ""
         description += f'🟢 **Now playing:** {title_link}{where} ({np["remaining_fmt"]} left)\n\n'
-    if q["episodes"]:
-        ep = q["episodes"][0]
+    ep = _next_up_episode(d) if q["episodes"] else None
+    if ep:
         title_link = _discord_link(f'"{ep["title"]}"', ep.get("episode_url"))
         where = f' — {_discord_link(ep["podcast"], ep.get("podcast_url"))}' if ep.get("podcast") else ""
         # Mirror the HTML report's episode table: always the publish age, plus
@@ -192,9 +221,13 @@ def build_discord(d):
         detail = fmt_relative(d, ep["pubdate"])
         if ep.get("in_progress") and ep.get("remaining_fmt"):
             detail += f' · {ep["remaining_fmt"]} left'
-        elif q.get("up_next_remaining_fmt"):
-            detail += f' · {q["up_next_remaining_fmt"]}'
+        else:
+            detail += f' · {ep["duration_fmt"]}'
         description += f'**Up next:** {title_link}{where} ({detail})'
+    elif q["episodes"]:
+        # Every queued episode is the one already playing (a single-episode
+        # queue, mid-play) - there's nothing distinct to call "up next".
+        description += "**Up next:** nothing else queued - you're mid-episode!"
     else:
         description += "**Up next:** queue is empty — you're all caught up!"
 
@@ -295,17 +328,13 @@ def build_html(d):
         card_rows += f"<tr>{''.join(pair)}</tr>"
 
     now_playing_data = d.get("now_playing")
+    up_next_episode = _next_up_episode(d)
 
     def _is_now_playing(e):
-        # Prefer matching by episode_url (stable identity from the store
-        # link); title/podcast is only a fallback for episodes with no
-        # store link populated.
-        if not now_playing_data:
-            return False
-        if now_playing_data.get("episode_url") and e.get("episode_url"):
-            return now_playing_data["episode_url"] == e["episode_url"]
-        return (now_playing_data.get("title") == e.get("title")
-                and now_playing_data.get("podcast") == e.get("podcast"))
+        return _matches_now_playing(now_playing_data, e)
+
+    def _is_up_next(e):
+        return up_next_episode is not None and e is up_next_episode
 
     def artwork_img(url, size=44, link=None):
         if not url:
@@ -323,7 +352,7 @@ def build_html(d):
         is_playing = _is_now_playing(e)
         if is_playing:
             badge = ' <span style="display:inline-block;background:#d1fae5;color:#047857;font-size:10px;font-weight:700;letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;">● NOW PLAYING</span>'
-        elif i == 0:
+        elif _is_up_next(e):
             badge = ' <span style="display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;">▶ UP NEXT</span>'
         else:
             badge = ""
@@ -333,7 +362,7 @@ def build_html(d):
         pod_html = html.escape(e["podcast"])
         if e.get("podcast_url"):
             pod_html = f'<a href="{html.escape(e["podcast_url"])}" target="_blank" style="color:#64748b;text-decoration:none;">{pod_html}</a>'
-        row_bg = "background:#f8fafc;" if (i == 0 or is_playing) else ""
+        row_bg = "background:#f8fafc;" if (is_playing or _is_up_next(e)) else ""
         remaining_html = (
             f'<div style="color:#2563eb;font-size:12px;margin-top:2px;">{e["remaining_fmt"]} left</div>'
             if e.get("in_progress") and e.get("remaining_fmt") else ""
