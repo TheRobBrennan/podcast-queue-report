@@ -344,6 +344,26 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
     queue.sort(key=lambda e: e["pubdate"], reverse=True)
     return queue
 
+def get_duplicate_episodes(queue):
+    """Groups queue episodes by exact title match (whitespace/case
+    normalized). Catches the real case this was built for: a podcast
+    network (e.g. a true-crime network) dropping the identical
+    cross-promotional episode into several of its shows' feeds on the same
+    day, so the same episode occupies multiple queue slots under different
+    podcast names — confirmed live with "Petra Mathers and Her Michael |
+    From Death of an Artist" appearing under three different podcasts
+    (Hot Money: Agent of Chaos, Lost Hills: Dark Canyon, Deep Cover) with
+    the same pubdate. Only exact title matches are grouped — no fuzzy
+    matching, to keep the false-positive rate at zero. Returns groups
+    (each a list of >=2 queue entries) sorted newest-first."""
+    groups = {}
+    for e in queue:
+        key = " ".join(e["title"].split()).casefold()
+        groups.setdefault(key, []).append(e)
+    dupes = [items for items in groups.values() if len(items) > 1]
+    dupes.sort(key=lambda items: max(e["pubdate"] for e in items), reverse=True)
+    return dupes
+
 def grade_for_days(days_behind):
     if days_behind <= 0.05:
         return "A+" if days_behind <= 0 else "A"
@@ -407,6 +427,7 @@ def main():
 
     # --- Unplayed queue / grade ---
     queue = get_unplayed_queue(cur, now)
+    duplicate_groups = get_duplicate_episodes(queue)
     queue_total = sum(e["duration"] for e in queue)
     if queue:
         oldest = min(e["pubdate"] for e in queue)
@@ -487,6 +508,21 @@ def main():
                 "total_seconds": v["total_seconds"], "total_fmt": fmt_duration(v["total_seconds"])}
             for k, v in windows.items()
         },
+        "duplicates": [
+            {
+                "title": items[0]["title"],
+                "count": len(items),
+                "podcasts": sorted({e["podcast"] for e in items}),
+                "episodes": [
+                    {"title": e["title"], "podcast": e["podcast"],
+                     "pubdate": e["pubdate"].isoformat(),
+                     "episode_url": e["episode_url"], "podcast_url": e["podcast_url"],
+                     "duration_fmt": fmt_duration(e["duration"])}
+                    for e in sorted(items, key=lambda e: e["pubdate"], reverse=True)
+                ],
+            }
+            for items in duplicate_groups
+        ],
         "now_playing": get_now_playing(cur),
         "emoji_header": emoji_header(),
         "config": {
