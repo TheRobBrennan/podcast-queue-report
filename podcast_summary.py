@@ -446,7 +446,12 @@ def main():
     # queue is newest-first (needed for the gap-detection walk above);
     # reverse so the oldest / "up next" episode is first, matching how
     # Podcasts itself orders the Latest Episodes view.
-    queue_oldest_first = list(reversed(queue))
+    # A plain reversed(queue) would also invert the active-vs-fresh
+    # tie-break for episodes sharing a pubdate (queue is built as
+    # active + fresh, so ties favor the active one) - sort explicitly
+    # instead so a same-pubdate started episode still lands ahead of
+    # an unstarted one after flipping to oldest-first.
+    queue_oldest_first = sorted(queue, key=lambda e: (e["pubdate"], not e["in_progress"]))
 
     up_next = queue_oldest_first[0] if queue_oldest_first else None
     up_next_remaining = None
