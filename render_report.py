@@ -144,6 +144,25 @@ def headline(q):
     return "That papa is right on time — current as of today"
 
 
+def duplicate_group_line(dup):
+    """One dup group -> the title plus which shows it's cross-posted on,
+    with the newest of the group implicitly the one worth keeping (the
+    others are the same episode re-fed into other shows in the network)."""
+    shows = ", ".join(dup["podcasts"])
+    return f'"{dup["title"]}" — same episode on {dup["count"]} shows: {shows}'
+
+
+def duplicates_chat_lines(d):
+    dupes = d.get("duplicates") or []
+    if not dupes:
+        return []
+    lines = ["🔁  POSSIBLE DUPLICATES — pick one, mark the rest played"]
+    for dup in dupes:
+        lines.append(duplicate_group_line(dup))
+    lines.append("")
+    return lines
+
+
 def now_playing_sentence(d):
     """Just the episode detail — the section header is added by
     build_chat_summary so the same sentence stays reusable without a
@@ -173,6 +192,7 @@ def build_chat_summary(d):
     lines.append(d["emoji_header"])
     lines.append(f'{headline(q)} — Grade: {q["grade"]} 🎧')
     lines.append("")
+    lines.extend(duplicates_chat_lines(d))
     now_playing = now_playing_sentence(d)
     if now_playing:
         lines.append("▶️  NOW PLAYING")
@@ -205,6 +225,13 @@ def build_discord(d):
     p = d["played"]
 
     description = f'**Grade {q["grade"]}** — {q["days_behind_phrase"]} 🎧\n\n'
+    dupes = d.get("duplicates") or []
+    if dupes:
+        description += '🔁 **Possible duplicates — pick one, mark the rest played**\n'
+        for dup in dupes:
+            shows = ", ".join(dup["podcasts"])
+            description += f'"{dup["title"]}" — same episode on {dup["count"]} shows: {shows}\n'
+        description += '\n'
     np = d.get("now_playing")
     if np:
         title_link = _discord_link(f'"{np["title"]}"', np.get("episode_url"))
@@ -270,6 +297,10 @@ def build_sms(d):
     lines = [d["emoji_header"]]
     lines.append(f'Grade: {q["grade"]} 🎧  ({q["days_behind_phrase"]})')
     lines.append("")
+    dupes = d.get("duplicates") or []
+    if dupes:
+        lines.append(f'🔁 {pluralize(len(dupes), "duplicate")} in queue — see report')
+        lines.append("")
     if np:
         where = f'{np["podcast"]} — ' if np["podcast"] else ""
         lines.append("▶️ NOW PLAYING")
@@ -329,6 +360,26 @@ def build_html(d):
 
     now_playing_data = d.get("now_playing")
     up_next_episode = _next_up_episode(d)
+
+    dupes = d.get("duplicates") or []
+    if dupes:
+        dup_rows = ""
+        for dup in dupes:
+            shows_html = ", ".join(html.escape(p) for p in dup["podcasts"])
+            dup_rows += (
+                f'<div style="margin-top:8px;font-size:13px;color:#78350f;">'
+                f'&ldquo;{html.escape(dup["title"])}&rdquo; &mdash; same episode on '
+                f'{dup["count"]} shows: {shows_html}</div>'
+            )
+        duplicates_html = (
+            '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;'
+            'padding:14px 20px;margin-bottom:32px;">'
+            '<div style="font-size:14px;font-weight:700;color:#92400e;">'
+            '🔁 Possible duplicates &mdash; pick one, mark the rest played</div>'
+            + dup_rows + '</div>'
+        )
+    else:
+        duplicates_html = ""
 
     def _is_now_playing(e):
         return _matches_now_playing(now_playing_data, e)
@@ -419,6 +470,8 @@ def build_html(d):
 <div style="max-width:720px;margin:0 auto;">
   <div style="font-size:28px;letter-spacing:2px;text-align:center;margin-bottom:8px;line-height:1.4;">{d["emoji_header"]}</div>
   <div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:36px;">{headline(q)} &mdash; <span style="white-space:nowrap;">Grade: <span style="display:inline-block;background:{grade_color};color:{grade_text};border-radius:8px;padding:2px 12px;font-weight:700;">{q["grade"]}</span> 🎧</span></div>
+
+  {duplicates_html}
 
   {now_playing_html}
 
