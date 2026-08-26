@@ -122,12 +122,59 @@ def fmt_days_behind(seconds, has_queue):
     return amount, f"{amount} behind"
 
 
-def get_now_playing(cur):
-    """Queries macOS's system-wide Now Playing info (via the `nowplaying-cli`
-    Homebrew tool, a thin wrapper around the private MediaRemote framework)
-    for whatever's actively playing. Returns None unless Podcasts.app itself
-    is the current player and it's actually playing (not just paused) —
-    the SQLite library alone can't tell us that, only playhead position.
+def _system_now_playing_info():
+    """Raw kMRMediaRemote* dict from `nowplaying-cli get-raw`, or None if
+    the tool is missing, times out, or returns something unparseable."""
+    try:
+        result = subprocess.run(
+            ["nowplaying-cli", "get-raw"], capture_output=True, text=True, timeout=3
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _podcasts_holds_playback_assertion():
+    """True if Podcasts.app currently holds a "CoreMedia Playback" power
+    assertion, per `pmset -g assertions`. This is the fallback signal for
+    "is Podcasts actually playing" when the system-wide Now Playing slot
+    (what nowplaying-cli reads) is held by some other app instead — e.g. a
+    Facebook video tab in a browser (com.apple.WebKit.GPU) can steal Now
+    Playing focus while Podcasts keeps playing an episode underneath it.
+    macOS's media frameworks take a PreventUserIdleSystemSleep assertion
+    named "CoreMedia Playback" for the owning process only while it's
+    actively rendering audio/video, and release it within moments of a
+    pause — confirmed live: `pmset -g assertions` showed a line like
+    `pid 897(Podcasts): ... PreventUserIdleSystemSleep named: "CoreMedia
+    Playback"` while an episode was playing behind a Facebook tab that
+    owned kMRMediaRemoteNowPlayingInfoClientBundleIdentifier. (A raw
+    ZPLAYHEAD comparison across two samples a couple seconds apart was
+    tried first and rejected — the column only gets persisted
+    periodically, not continuously during playback, so it read identical
+    across 4.5 seconds of confirmed real playback and would have produced
+    constant false negatives.)"""
+    try:
+        result = subprocess.run(
+            ["pmset", "-g", "assertions"], capture_output=True, text=True, timeout=3
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+    return any(
+        "(Podcasts):" in line and "CoreMedia Playback" in line
+        for line in result.stdout.splitlines()
+    )
+
+
+def _now_playing_from_nowplaying_cli(cur, info):
+    """Builds the Now Playing dict from nowplaying-cli's info, refined
+    against the library's own ZPLAYSTATE=1 row for the same podcast.
 
     nowplaying-cli's title AND elapsed/duration are unreliable for some
     podcasts (observed with My First Million): the title is a live
@@ -142,25 +189,8 @@ def get_now_playing(cur):
     its stable title, store links, and the library's own ZPLAYHEAD/
     ZDURATION for elapsed/remaining — nowplaying-cli is only trusted for
     confirming playback is actually active, and as a fallback if that DB
-    lookup comes up empty."""
-    try:
-        result = subprocess.run(
-            ["nowplaying-cli", "get-raw"], capture_output=True, text=True, timeout=3
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    try:
-        info = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
-
-    if info.get("kMRMediaRemoteNowPlayingInfoClientBundleIdentifier") != "com.apple.podcasts":
-        return None
-    if (info.get("kMRMediaRemoteNowPlayingInfoPlaybackRate") or 0) <= 0:
-        return None
-
+    lookup comes up empty. Returns None if nowplaying-cli didn't supply a
+    title at all."""
     title = info.get("kMRMediaRemoteNowPlayingInfoTitle")
     if not title:
         return None
@@ -214,6 +244,78 @@ def get_now_playing(cur):
         "duration_fmt": fmt_duration(duration),
         "remaining_fmt": fmt_duration(remaining),
     }
+
+
+def _now_playing_from_playstate(cur):
+    """Builds the Now Playing dict straight from the library's own
+    ZPLAYSTATE=1 row, for use when Podcasts is confirmed playing (via
+    _podcasts_holds_playback_assertion) but nowplaying-cli can't supply a
+    title/artist because some other app currently owns the system Now
+    Playing slot. Picks the most recently touched ZPLAYSTATE=1 episode,
+    same tiebreak get_unplayed_queue uses for pinning in-progress
+    episodes."""
+    cur.execute(
+        "select e.ZTITLE, p.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID, "
+        "e.ZPLAYHEAD, e.ZDURATION, p.ZARTWORKTEMPLATEURL "
+        "from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK "
+        "where e.ZPLAYSTATE = 1 order by e.ZLASTDATEPLAYED desc limit 1"
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    title, podcast, pod_url, track_id, playhead, duration, artwork_template = row
+    if not duration:
+        return None
+    elapsed = playhead or 0
+    remaining = max(duration - elapsed, 0)
+    return {
+        "title": title,
+        "podcast": podcast,
+        "episode_url": f"{pod_url}?i={int(track_id)}" if pod_url and track_id else pod_url,
+        "podcast_url": pod_url,
+        "artwork_url": artwork_url(artwork_template),
+        "elapsed_seconds": elapsed,
+        "duration_seconds": duration,
+        "elapsed_fmt": fmt_duration(elapsed),
+        "duration_fmt": fmt_duration(duration),
+        "remaining_fmt": fmt_duration(remaining),
+    }
+
+
+def get_now_playing(cur):
+    """Returns None unless Podcasts.app is actually playing (not just
+    paused) — the SQLite library alone can't tell us that, only playhead
+    position. Two independent signals are combined:
+
+    1. macOS's system-wide Now Playing info (via the `nowplaying-cli`
+       Homebrew tool, a thin wrapper around the private MediaRemote
+       framework) — trusted when Podcasts.app itself is the current
+       Now Playing client. See _now_playing_from_nowplaying_cli for why
+       its title/elapsed still need correcting against the DB.
+    2. A "CoreMedia Playback" power assertion held by the Podcasts
+       process, via `pmset -g assertions` (_podcasts_holds_playback_
+       assertion) — used only when signal 1 says some *other* app
+       currently owns the system Now Playing slot, since MediaRemote only
+       ever exposes one such client system-wide. Observed live: a
+       Facebook video tab held Now Playing while Podcasts kept playing an
+       episode in the background, and the report's Now Playing section
+       silently went missing even though the episode was genuinely
+       playing — signal 2 is what catches that case, at the cost of not
+       carrying a live per-segment title (it reads the episode straight
+       from ZPLAYSTATE=1 instead)."""
+    info = _system_now_playing_info()
+    owns_now_playing = (
+        info is not None
+        and info.get("kMRMediaRemoteNowPlayingInfoClientBundleIdentifier") == "com.apple.podcasts"
+    )
+    if owns_now_playing:
+        if (info.get("kMRMediaRemoteNowPlayingInfoPlaybackRate") or 0) <= 0:
+            return None  # confirmed owner, confirmed paused
+        return _now_playing_from_nowplaying_cli(cur, info)
+
+    if _podcasts_holds_playback_assertion():
+        return _now_playing_from_playstate(cur)
+    return None
 
 def connect():
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
