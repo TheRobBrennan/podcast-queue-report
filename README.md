@@ -161,6 +161,14 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
 - `SKILL.md` — self-contained instructions for an AI agent (e.g. Claude) to
   run this report and automatically deliver it by email, text, and/or
   Discord, gated by which `.env` variables are configured.
+- `scripts/launchd_run.sh` — what the scheduled launchd agent executes: a
+  launchd-safe `PATH`, an `.env` check, a minimum-gap guard, then
+  `make discord`. Supports `DRY_RUN=1` to exercise everything but the post.
+- `deploy/ai.sploosh.podcast-queue-report.plist` — the launchd agent that
+  runs the report on a schedule with no AI session involved. See
+  `docs/LOCAL-SCHEDULING.md`.
+- `docs/LOCAL-SCHEDULING.md` — how the scheduled local runs are set up,
+  verified, and turned off.
 
 ## Environment variables
 
@@ -202,6 +210,12 @@ explanatory message if its `.env` destination (`REPORT_EMAIL`,
 for each channel, there's no per-run confirmation prompt. `make all` /
 `npm start` run all of it from one query. See `SKILL.md` for how an AI
 agent should drive this.
+
+## Scheduled runs
+
+On macOS this runs itself on a schedule via a launchd user agent — no AI
+session in the loop, and missed runs coalesce into one instead of piling up
+after the lid opens. See **[docs/LOCAL-SCHEDULING.md](docs/LOCAL-SCHEDULING.md)**.
 
 ## Known caveats
 
