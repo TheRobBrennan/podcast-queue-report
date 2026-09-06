@@ -391,7 +391,27 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
     including the abandoned ones. If Rob ever changes his own Sort By
     setting in Podcasts.app, update LATEST_EPISODES_WINDOW_DAYS to match -
     it isn't readable from this SQLite library, only from the app's own
-    UI."""
+    UI.
+
+    ZDURATION > 0 excludes cross-promotional feed drops. Podroll-style
+    "You Might Also Like: <other show>" episodes are injected into a
+    subscribed show's feed with every duration column at 0 - ZDURATION,
+    ZENTITLEDDURATION, ZFREEDURATION and ZFREEALTERNATEENCLOSUREDURATION
+    alike - and their own description carries a disclaimer that they are
+    "not affiliated with, endorsed by, or produced in conjunction with the
+    host podcast feed". They still set ZUNPLAYEDTAB=1, so without this
+    predicate they enter the queue like any other episode.
+
+    That matters more than one stray row suggests, because the queue is
+    presented oldest-first: a zero-duration drop lands at the head and is
+    reported as "Up next" with "0 seconds" left to finish, which is what
+    surfaced this (MacBreak Weekly, 2026-09-02, reported as up next on
+    2026-09-06). It also cannot be dismissed by listening to it.
+
+    The filter is deliberately on duration rather than on ZEPISODETYPE:
+    these arrive as type 'bonus', which legitimate bonus episodes also
+    use. Of 523 unplayed-tab episodes in the library when this was
+    written, exactly one had ZDURATION <= 0 - this drop."""
     now_cd = dt_to_cd(now_dt)
     window_cd = dt_to_cd(now_dt - datetime.timedelta(days=window_days))
     cur.execute('''
@@ -401,6 +421,7 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
           and e.ZENTITLEMENTSTATE=0
+          and e.ZDURATION > 0
         order by e.ZPUBDATE desc
     ''', (now_cd,))
     rows = cur.fetchall()
