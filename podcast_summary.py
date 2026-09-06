@@ -49,7 +49,7 @@ STATE_PATH = os.path.join(SCRIPT_DIR, ".podcast_skill_state.json")
 CORE_DATA_EPOCH = 978307200
 
 def cd_to_dt(v):
-    return datetime.datetime.fromtimestamp(v + CORE_DATA_EPOCH, datetime.UTC).replace(tzinfo=None)
+    return datetime.datetime.fromtimestamp(v + CORE_DATA_EPOCH, datetime.timezone.utc).replace(tzinfo=None)
 
 def dt_to_cd(d):
     return (d - datetime.datetime(2001,1,1)).total_seconds()
@@ -523,7 +523,7 @@ def emoji_header():
     return "".join(EMOJI_POOL)
 
 def main():
-    now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     con = connect()
     cur = con.cursor()
 
