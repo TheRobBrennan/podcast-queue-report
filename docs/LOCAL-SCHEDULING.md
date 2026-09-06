@@ -66,6 +66,11 @@ launchctl print gui/$UID/ai.sploosh.podcast-queue-report | grep -E "state|runs =
 tail -20 ~/Library/Logs/podcast-queue-report/run.log
 ```
 
+**Check `last exit code` first, not the log.** A job that fails to spawn never
+runs the script, so it appends nothing - a stale log looks identical to a
+healthy idle one. `last exit code = 78: EX_CONFIG` means launchd could not
+execute the program, which in practice means the path is wrong.
+
 Force a run without waiting for the schedule:
 
 ```bash
@@ -106,8 +111,36 @@ than a bad path. If you hit that, check the bytes:
 ls /Users/rob/repos/ | grep -i podcast | xxd | head -3   # expect ef a3 bf
 ```
 
-Build the path with `printf ''` rather than typing it, or use a glob
-(`cd /Users/rob/repos/*Podcasts`).
+Do not type the glyph into the plist at all - **generate the plist
+programmatically**, resolving the path from the filesystem:
+
+```python
+import plistlib, glob, os
+script = os.path.join(glob.glob("/Users/rob/repos/*Podcasts")[0], "scripts", "launchd_run.sh")
+assert os.path.exists(script)
+# ...build the dict, plistlib.dump it, then read it back and assert again
+```
+
+**This regressed once, on 2026-09-04.** The bug was found, fixed, and written up
+here - and then the plist was rewritten by hand one last time to change the
+schedule, which silently put a plain space back in. The dry-run verification had
+happened *before* that final rewrite, so the agent was reported as working while
+the installed plist pointed at a file that does not exist. Every scheduled run
+failed for two days and posted nothing. Nobody noticed until 2026-09-06, because
+a failure to spawn writes **nothing to the log** - the last line was still the
+successful dry run, which reads exactly like a healthy idle agent.
+
+The glyph is also fragile in transit: it can be silently normalised to a plain
+space when pasted between tools, editors, or chat. That is the same reason the
+regression happened. Never retype it; always resolve it from the filesystem.
+
+Two rules follow:
+
+1. After **any** plist edit, read the path back out and assert it exists before
+   bootstrapping. `plutil -lint` does not catch this - the file was valid XML
+   the whole time.
+2. A `kickstart` is only evidence for the plist installed *right now*. Verify
+   after the last edit, not before it.
 
 ### Full Disk Access
 

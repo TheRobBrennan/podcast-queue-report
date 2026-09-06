@@ -2,35 +2,46 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>ai.sploosh.podcast-queue-report</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/rob/repos/ Podcasts/scripts/launchd_run.sh</string>
-    </array>
-
-    <!-- Every 4 hours across the day window (7am-6pm), then 8-hour gaps
-         overnight: 7:06am -> 11:06am -> 3:06pm -> 11:06pm -> 7:06am.
-         launchd coalesces intervals missed while asleep into ONE run on
-         wake, so a closed lid never produces a burst of back-to-back posts. -->
-    <key>StartCalendarInterval</key>
-    <array>
-        <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>6</integer></dict>
-        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>6</integer></dict>
-        <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>6</integer></dict>
-        <dict><key>Hour</key><integer>23</integer><key>Minute</key><integer>6</integer></dict>
-    </array>
-
-    <key>RunAtLoad</key>
-    <false/>
-
-    <key>StandardOutPath</key>
-    <string>/Users/rob/Library/Logs/podcast-queue-report/run.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/rob/Library/Logs/podcast-queue-report/run.log</string>
-
-    <key>ProcessType</key>
-    <string>Background</string>
+	<key>Label</key>
+	<string>ai.sploosh.podcast-queue-report</string>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/rob/repos/ Podcasts/scripts/launchd_run.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/rob/Library/Logs/podcast-queue-report/run.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/rob/Library/Logs/podcast-queue-report/run.log</string>
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>7</integer>
+			<key>Minute</key>
+			<integer>6</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>11</integer>
+			<key>Minute</key>
+			<integer>6</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>15</integer>
+			<key>Minute</key>
+			<integer>6</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>23</integer>
+			<key>Minute</key>
+			<integer>6</integer>
+		</dict>
+	</array>
 </dict>
 </plist>
