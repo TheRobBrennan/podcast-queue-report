@@ -78,10 +78,17 @@ minimal built-in `.env` loader. Nothing to `pip install`.
   fail with `Unable to create '.../.git/index.lock': File exists.` Run
   `make unlock` (or `python3 scripts/git_unlock.py`) first if you hit that —
   it's a harmless no-op on a normal filesystem.
-- The repo directory itself has a non-ASCII character before "Podcasts" in
-  its name (visually looks like a plain space, isn't one) — don't assume a
-  literal `" Podcasts"` path will `cd` correctly; resolve it programmatically
-  (e.g. glob-match `*Podcasts` under `~/repos/`) rather than hardcoding it.
+- The repo directory name begins with **U+F8FF (the Apple logo glyph, )**
+  followed by a space — ` Podcasts`. It looks like a plain leading space
+  and isn't one. Don't assume a literal `" Podcasts"` path will `cd`
+  correctly; resolve it programmatically (glob-match `*Podcasts` under
+  `~/repos/`, or build it with `printf '\uf8ff'`) rather than hardcoding it.
+  Confirm the bytes with
+  `ls ~/repos/ | grep -i podcast | xxd | head -3` — expect `ef a3 bf`.
+  This bites hardest outside the shell, where a glob isn't available: a
+  launchd plist `ProgramArguments` path typed with a plain space fails to
+  spawn and reports `exit code 78: EX_CONFIG` with an **empty log file**,
+  which reads as a config or permissions problem rather than a bad path.
 
 ## Conventions
 
