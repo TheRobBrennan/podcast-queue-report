@@ -11,7 +11,7 @@
 		<string>/Users/rob/repos/ Podcasts/scripts/launchd_run.sh</string>
 	</array>
 	<key>RunAtLoad</key>
-	<false/>
+	<true/>
 	<key>StandardErrorPath</key>
 	<string>/Users/rob/Library/Logs/podcast-queue-report/run.log</string>
 	<key>StandardOutPath</key>
