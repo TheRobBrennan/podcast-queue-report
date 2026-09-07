@@ -20,19 +20,37 @@ entirely and has no wake behavior), which is why it isn't used here.
 
 There is a second belt in the wrapper script: `MIN_GAP_MINUTES` (default 60)
 makes the script exit early if a *successful* run finished less than that many
-minutes ago. The real schedule's tightest gap is 4 hours, so this only ever
+minutes ago. The real schedule's tightest gap is 2 hours, so this only ever
 fires if something unexpected triggers a double run.
+
+The agent also sets `RunAtLoad`, so it fires once whenever it (re)loads - at
+login, reboot, or a manual `bootout`/`bootstrap`. This only covers the moment
+the agent loads, not periodic runs while asleep - `StartCalendarInterval`
+fires still require the machine to already be awake with an active session
+(see "Why launchd and not cron" above); a `LaunchAgent` cannot wake the
+machine itself. `RunAtLoad` just closes the common case of "asleep overnight,
+opened the lid this morning" a bit sooner than waiting for the next
+`StartCalendarInterval` fire to coalesce.
 
 ## Schedule
 
 | Time     | Gap since previous |
 | -------- | ------------------ |
 | 7:06am   | 8h                 |
-| 11:06am  | 4h                 |
-| 3:06pm   | 4h                 |
-| 11:06pm  | 8h                 |
+| 9:06am   | 2h                 |
+| 11:06am  | 2h                 |
+| 1:06pm   | 2h                 |
+| 3:06pm   | 2h                 |
+| 5:06pm   | 2h                 |
+| 7:06pm   | 2h                 |
+| 11:06pm  | 4h                 |
+| 3:06am   | 4h                 |
 
-Every 4 hours across the 7am-6pm day window, then 8-hour gaps overnight.
+Every 2 hours across the 7am-7pm working-hours window, then 4-hour gaps
+overnight. Tightening the daytime gap only helps while the Mac is actually
+awake (lid open, even with the display dimmed) - it buys nothing while
+genuinely asleep, since missed fires coalesce into one run either way
+regardless of how many were scheduled in between.
 
 ## Files
 
