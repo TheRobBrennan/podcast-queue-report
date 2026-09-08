@@ -1,4 +1,4 @@
-import sqlite3, datetime, json, os, sys, glob, subprocess
+import sqlite3, datetime, json, os, sys, glob, subprocess, time
 from zoneinfo import ZoneInfo
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -320,6 +320,70 @@ def get_now_playing(cur):
 def connect():
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
 
+REFRESH_WAIT_SECONDS = 15
+
+def refresh_podcasts_feeds(db_path=DB_PATH, wait_seconds=REFRESH_WAIT_SECONDS):
+    """Best-effort: ask Podcasts.app to refresh its feeds before we read its
+    library, and wait briefly for that to land.
+
+    Confirmed root cause of an undercount (2026-09-08): CodePen Radio
+    "439: Dragging! Drag Everything!" was published ~23 minutes before a
+    scheduled report run and was already visible in Apple's own "Latest
+    Episodes" view, but had no row at all in ZMTEPISODE - not filtered by
+    any predicate, genuinely absent. The on-device library this script
+    reads only ingests newly-published episodes when Podcasts.app itself
+    refreshes its feeds (on open, on a pull-to-refresh, or on its own
+    internal schedule); "Latest Episodes" apparently draws on a faster
+    live path Rob's UI has but this script does not. Triggering File >
+    Refresh Feeds via System Events forced the same ingestion immediately
+    (confirmed: the episode's row appeared in ZMTEPISODE, and the
+    library's mtime moved, within ~11 seconds of the click).
+
+    Only runs if Podcasts.app is already a running process - never
+    launches it. This matters for the launchd agent: a 7am/11pm scheduled
+    run should not pop the app open (Dock bounce, potential focus/space
+    changes) just to generate a Discord post nobody is watching for it.
+    If Rob has it open (the common case - he's usually mid-queue), the
+    menu click is silent and doesn't steal focus (confirmed via System
+    Events: frontmost app was unchanged after the click).
+
+    Failure anywhere here (System Events not authorized, Podcasts not
+    running, the menu item renamed in a future macOS release) is
+    swallowed - this is a freshness nice-to-have, never a hard dependency
+    of the report. Returns True if the library file's mtime moved during
+    the wait (i.e. a refresh was actually observed to land), else False.
+    """
+    try:
+        running = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to exists application process "Podcasts"'],
+            capture_output=True, text=True, timeout=5,
+        )
+        if running.returncode != 0 or running.stdout.strip() != "true":
+            return False
+
+        before_mtime = os.path.getmtime(db_path) if os.path.exists(db_path) else None
+
+        subprocess.run(
+            ["osascript", "-e", '''
+                tell application "System Events"
+                    tell process "Podcasts"
+                        click menu item "Refresh Feeds" of menu 1 of menu bar item "File" of menu bar 1
+                    end tell
+                end tell
+            '''],
+            capture_output=True, text=True, timeout=10,
+        )
+
+        deadline = time.monotonic() + wait_seconds
+        while time.monotonic() < deadline:
+            if os.path.exists(db_path) and os.path.getmtime(db_path) != before_mtime:
+                return True
+            time.sleep(1)
+        return False
+    except Exception:
+        return False
+
 LATEST_EPISODES_WINDOW_DAYS = 30
 
 def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
@@ -393,14 +457,16 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
     it isn't readable from this SQLite library, only from the app's own
     UI.
 
-    ZDURATION > 0 excludes cross-promotional feed drops. Podroll-style
-    "You Might Also Like: <other show>" episodes are injected into a
-    subscribed show's feed with every duration column at 0 - ZDURATION,
-    ZENTITLEDDURATION, ZFREEDURATION and ZFREEALTERNATEENCLOSUREDURATION
-    alike - and their own description carries a disclaimer that they are
-    "not affiliated with, endorsed by, or produced in conjunction with the
-    host podcast feed". They still set ZUNPLAYEDTAB=1, so without this
-    predicate they enter the queue like any other episode.
+    ZDURATION > 0 excludes cross-promotional feed drops... except that
+    duration alone turned out to also catch a legitimate episode still
+    being processed. Podroll-style "You Might Also Like: <other show>"
+    episodes are injected into a subscribed show's feed with every
+    duration column at 0 - ZDURATION, ZENTITLEDDURATION, ZFREEDURATION and
+    ZFREEALTERNATEENCLOSUREDURATION alike - and their own description
+    carries a disclaimer that they are "not affiliated with, endorsed by,
+    or produced in conjunction with the host podcast feed". They still set
+    ZUNPLAYEDTAB=1, so without some predicate they enter the queue like any
+    other episode.
 
     That matters more than one stray row suggests, because the queue is
     presented oldest-first: a zero-duration drop lands at the head and is
@@ -408,20 +474,43 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
     surfaced this (MacBreak Weekly, 2026-09-02, reported as up next on
     2026-09-06). It also cannot be dismissed by listening to it.
 
-    The filter is deliberately on duration rather than on ZEPISODETYPE:
-    these arrive as type 'bonus', which legitimate bonus episodes also
-    use. Of 523 unplayed-tab episodes in the library when this was
-    written, exactly one had ZDURATION <= 0 - this drop."""
+    8. A blanket `ZDURATION > 0` predicate (the original fix, above) -
+       wrong in a different direction, caught 2026-09-08. A brand-new
+       episode (CodePen Radio "439: Dragging! Drag Everything!", published
+       ~23 minutes before a scheduled run) also has ZDURATION=0 - not
+       because it's a cross-promo drop, but because Apple hadn't finished
+       processing the audio enclosure yet (ZBYTESIZE and ZASSETURL were
+       both still empty too). A blanket duration filter can't tell "will
+       never have a duration" from "doesn't have one yet" apart. The
+       disclaimer text turned out to be the one signal actually specific
+       to the cross-promo case (confirmed against the MacBreak Weekly row:
+       its description contains the exact phrase verbatim) - a real
+       episode's show notes are vanishingly unlikely to contain it by
+       coincidence. So the filter now only excludes a zero-duration
+       episode when its own description carries that disclaimer,
+       independent of duration - a real full-duration episode is never
+       excluded no matter what its description says, and a zero-duration
+       one is only excluded when the description marks it as the injected
+       kind. This also stacks with `refresh_podcasts_feeds()` above, which
+       addresses the more common half of this same incident (the episode
+       being entirely absent from the local library, not just filtered
+       out of it).
+
+    The filter is deliberately on the description text rather than on
+    ZEPISODETYPE: these arrive as type 'bonus', which legitimate bonus
+    episodes also use. Of 523 unplayed-tab episodes in the library when
+    the original duration-only version of this was written, exactly one
+    had ZDURATION <= 0 - this drop."""
+    CROSS_PROMO_DISCLAIMER = "not affiliated with, endorsed by, or produced in conjunction with"
     now_cd = dt_to_cd(now_dt)
     window_cd = dt_to_cd(now_dt - datetime.timedelta(days=window_days))
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
-               e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL
+               e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, e.ZITEMDESCRIPTION
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
           and e.ZENTITLEMENTSTATE=0
-          and e.ZDURATION > 0
         order by e.ZPUBDATE desc
     ''', (now_cd,))
     rows = cur.fetchall()
@@ -429,7 +518,9 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
     fresh = []
     started = []
     seen_started = set()
-    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played, artwork_template in rows:
+    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played, artwork_template, description in rows:
+        if (dur or 0) <= 0 and CROSS_PROMO_DISCLAIMER in (description or "").casefold():
+            continue
         is_started = playstate == 1 or (playhead or 0) > 0
         # Never-started candidates must fall inside the window; started
         # episodes are exempt (pinning has its own recency rule below,
@@ -544,6 +635,7 @@ def emoji_header():
     return "".join(EMOJI_POOL)
 
 def main():
+    refresh_podcasts_feeds()
     now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     con = connect()
     cur = con.cursor()
