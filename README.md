@@ -99,6 +99,7 @@ agent working in this repo. Run `make help` any time for the full list.
 | `make email` | Emails the report via Outlook (needs `REPORT_EMAIL` in `.env`) |
 | `make sms` | Texts the report via Messages.app (needs `REPORT_PHONE` in `.env`) |
 | `make discord` | Posts the chat summary to Discord via webhook (needs `DISCORD_WEBHOOK_URL` in `.env`) |
+| `make cron` | Runs the query once, then discord + email (what the launchd agent runs) |
 | `make open` | Regenerates the HTML report and opens it in your default browser (macOS `open`) |
 | `make all` | Runs the query once, then chat + html + email + sms + discord (each send skips cleanly if unconfigured) |
 | `make unlock` | Clears stale git lock files (see `scripts/git_unlock.py`) |
@@ -163,7 +164,7 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
   Discord, gated by which `.env` variables are configured.
 - `scripts/launchd_run.sh` — what the scheduled launchd agent executes: a
   launchd-safe `PATH`, an `.env` check, a minimum-gap guard, then
-  `make discord`. Supports `DRY_RUN=1` to exercise everything but the post.
+  `make cron` (Discord + email). Supports `DRY_RUN=1` to exercise everything but sending.
 - `deploy/ai.sploosh.podcast-queue-report.plist` — the launchd agent that
   runs the report on a schedule with no AI session involved. See
   `docs/LOCAL-SCHEDULING.md`.

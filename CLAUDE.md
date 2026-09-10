@@ -39,6 +39,7 @@ make email    # email SUBJECT + body
 make html     # regenerates reports/podcast_report.html
 make open     # regenerates html + opens it in the real macOS default browser
 make discord  # posts the chat summary to Discord (needs DISCORD_WEBHOOK_URL)
+make cron     # discord + email from one query (used by the launchd agent)
 make all      # runs the query ONCE, then renders chat+sms+email+html from
               # that one snapshot — always use this over calling chat/sms/
               # email/html separately if you want more than one format,

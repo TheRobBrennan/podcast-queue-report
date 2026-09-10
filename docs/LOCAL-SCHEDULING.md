@@ -2,7 +2,7 @@
 
 The report runs itself on this MacBook Pro via a **launchd user agent**, with no
 Claude session in the loop. Everything the report needs is a plain shell
-pipeline (`make discord`), so a scheduled agent is all it takes.
+pipeline (`make cron`), so a scheduled agent is all it takes.
 
 This replaces the Claude cloud routine that used to drive it. That routine is
 disabled as of 2026-09-04.
@@ -60,7 +60,7 @@ regardless of how many were scheduled in between.
   the version-controlled source of truth.
 - `scripts/launchd_run.sh` - what the agent actually executes. Sets a
   launchd-safe `PATH`, checks `.env` exists, applies the `MIN_GAP_MINUTES`
-  guard, runs `make discord`, and writes a timestamped line either way.
+  guard, runs `make cron`, and writes a timestamped line either way.
 
 ## Install / update
 
@@ -169,9 +169,12 @@ OS upgrade, the symptom is a permissions error from `podcast_summary.py` in
 `run.log`; grant Full Disk Access to `/bin/zsh` in System Settings ->
 Privacy & Security.
 
-### Discord only
+### Discord + email, not SMS
 
-The agent runs `make discord`, not `make all`. `make all` drags in the `email`
-and `sms` targets, which are deliberately disabled (`REPORT_PHONE` and
-`REPORT_EMAIL_CLIENT` commented out in `.env`) because they need computer-use
-control of Messages/Outlook and can't run unattended.
+The agent runs `make cron` (Discord post + Outlook email), not `make all`.
+`make all` also drags in the `sms` target, which stays off for the scheduled
+agent (`REPORT_PHONE` left blank in `.env`) — Messages.app automation is
+noisier to run unattended than Outlook's AppleScript send. Email works
+unattended because launchd *Agents* (unlike Daemons) run inside the user's
+GUI session, so Apple Events / Automation permissions granted once to
+`osascript` still apply.
