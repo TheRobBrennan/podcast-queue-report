@@ -129,34 +129,45 @@ class GetUnplayedQueueTests(unittest.TestCase):
         self.assertIn("inside window", self.titles(queue))
         self.assertNotIn("outside window", self.titles(queue))
 
-    def test_window_bounds_started_episode_too(self):
-        """Regression for the 2026-09-10 bug: a started-but-unfinished
-        episode published outside the window must NOT be exempt from it,
-        even if it was recently touched. Previously, a barely-played
-        episode published 25 days ago with a last_played 2 days ago would
-        surface as '25 days behind' under a 21-day window."""
+    def test_started_episode_kept_regardless_of_publish_age_if_actively_playing(self):
+        """Regression for the 2026-09-11 bug: an episode Rob was actively
+        listening to (last touched under an hour ago) disappeared from
+        the queue entirely because its publish date had rolled past the
+        window. A currently-in-progress episode must stay no matter how
+        old its publish date is, as long as it was recently touched."""
         pod = self.fx.podcast("Show B")
         self.fx.episode(
-            pod, "old but recently touched", self.now - datetime.timedelta(days=25),
-            playhead=10, playstate=1, last_played=self.now - datetime.timedelta(days=2),
+            pod, "actively playing, old publish date", self.now - datetime.timedelta(days=90),
+            playhead=1000, playstate=1, last_played=self.now - datetime.timedelta(hours=1),
         )
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
-        self.assertNotIn("old but recently touched", self.titles(queue))
+        self.assertIn("actively playing, old publish date", self.titles(queue))
 
-    def test_no_entry_exceeds_the_window(self):
-        """General invariant: whatever window_days is, nothing older than
-        it should ever appear - started or fresh."""
+    def test_started_episode_excluded_once_abandoned(self):
+        """Regression for the 2026-09-10 bug: a started-but-abandoned
+        episode (not touched in a long time) must NOT be exempt from any
+        bound just because ZPLAYSTATE=1 - previously, a barely-played
+        episode last touched weeks ago surfaced as wildly 'behind' under
+        a much narrower window. Once last_played falls outside
+        ACTIVE_RECENCY_HOURS (48h), it's treated as abandoned, not active."""
         pod = self.fx.podcast("Show C")
-        self.fx.episode(pod, "fresh, in window", self.now - datetime.timedelta(days=5))
         self.fx.episode(
-            pod, "started, way outside window", self.now - datetime.timedelta(days=90),
-            playhead=5, playstate=1, last_played=self.now - datetime.timedelta(hours=1),
+            pod, "abandoned, touched weeks ago", self.now - datetime.timedelta(days=90),
+            playhead=10, playstate=1, last_played=self.now - datetime.timedelta(days=20),
         )
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
-        cutoff = self.now - datetime.timedelta(days=21)
-        for e in queue:
-            self.assertGreaterEqual(e["pubdate"], cutoff,
-                                     f"{e['title']!r} is older than the {21}-day window")
+        self.assertNotIn("abandoned, touched weeks ago", self.titles(queue))
+
+    def test_fresh_episode_never_exceeds_the_window(self):
+        """General invariant: a never-started episode outside window_days
+        never appears, regardless of window_days's value."""
+        pod = self.fx.podcast("Show D")
+        self.fx.episode(pod, "fresh, in window", self.now - datetime.timedelta(days=5))
+        self.fx.episode(pod, "fresh, outside window", self.now - datetime.timedelta(days=25))
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        fresh_titles = {e["title"] for e in queue if not e["in_progress"]}
+        self.assertIn("fresh, in window", fresh_titles)
+        self.assertNotIn("fresh, outside window", fresh_titles)
 
     def test_playstate_2_does_not_exclude_an_episode(self):
         """Regression for the 2026-09-10 bug: ZPLAYSTATE=2 does NOT mean
