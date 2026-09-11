@@ -500,7 +500,33 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
     ZEPISODETYPE: these arrive as type 'bonus', which legitimate bonus
     episodes also use. Of 523 unplayed-tab episodes in the library when
     the original duration-only version of this was written, exactly one
-    had ZDURATION <= 0 - this drop."""
+    had ZDURATION <= 0 - this drop.
+
+    9. Requiring ZUNPLAYEDTAB=1 on never-started candidates - wrong,
+       caught 2026-09-10. Rob's own "Latest Episodes" view showed seven
+       Elevate with Robert Glazer episodes (Aug 22 - Sep 5, plus an
+       eighth by the time this was fixed) as plainly unplayed - full
+       play button, no checkmark - that never appeared in this queue.
+       All seven have ZPLAYSTATE=0 (never touched, confirmed against the
+       library directly) but ZUNPLAYEDTAB=0, and a manual File > Refresh
+       Feeds didn't change that - so it isn't the "row hasn't landed yet"
+       case refresh_podcasts_feeds() handles above, it's that this
+       particular flag never gets set to 1 for them at all. What they
+       share instead is ZBACKCATALOG=1 - across the whole library, right
+       now, exactly these eight rows are (ZBACKCATALOG=1, ZPLAYSTATE=0,
+       published inside the window); no other subscribed show has any.
+       So ZUNPLAYEDTAB=1 is now OR'd with ZBACKCATALOG=1 rather than
+       relied on alone - it stays load-bearing for every other show,
+       this just stops it from silently dropping a show's episodes when
+       Apple tags them as back-catalog instead of setting the tab flag.
+       Also caught in the same pass: a playstate=2 (fully played)
+       episode - Elevate Classics: Klaus Kleinfeld, played on 2026-09-10
+       - kept resurfacing as a "fresh" never-started item forever,
+       because ZUNPLAYEDTAB stays 1 after an episode is played and
+       ZPLAYHEAD resets to 0 once finished, so the old is_started check
+       (playstate==1 or playhead>0) missed it entirely. ZPLAYSTATE=2 is
+       now excluded from the base query outright - a finished episode
+       should never re-enter the queue as either fresh or pinned."""
     CROSS_PROMO_DISCLAIMER = "not affiliated with, endorsed by, or produced in conjunction with"
     now_cd = dt_to_cd(now_dt)
     window_cd = dt_to_cd(now_dt - datetime.timedelta(days=window_days))
@@ -509,8 +535,9 @@ def get_unplayed_queue(cur, now_dt, window_days=LATEST_EPISODES_WINDOW_DAYS):
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
                e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, e.ZITEMDESCRIPTION
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
-        where e.ZUNPLAYEDTAB=1 and p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
-          and e.ZENTITLEMENTSTATE=0
+        where p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
+          and e.ZENTITLEMENTSTATE=0 and e.ZPLAYSTATE != 2
+          and (e.ZUNPLAYEDTAB=1 or e.ZBACKCATALOG=1)
         order by e.ZPUBDATE desc
     ''', (now_cd,))
     rows = cur.fetchall()
