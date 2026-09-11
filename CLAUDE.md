@@ -107,8 +107,18 @@ minimal built-in `.env` loader. Nothing to `pip install`.
   and `scripts/post_discord.py` (webhook) - and each skips cleanly if its
   destination variable is blank. There's no per-run confirmation step;
   consent is expressed by what's configured in `.env`. See `SKILL.md`.
-- No test suite exists. Verify changes to `podcast_summary.py` /
-  `render_report.py` by actually running `make all` against the real
-  library and eyeballing the output — there's no library to fake it with, so
-  a mocked test would just re-encode assumptions about the reverse-engineered
-  schema instead of catching drift from it.
+- **`make test` covers the deterministic logic, not the reverse-engineered
+  heuristics.** `tests/test_podcast_summary.py` builds a synthetic
+  in-memory SQLite schema and checks that `get_unplayed_queue()` /
+  `get_duplicate_episodes()` / `grade_for_days()` correctly implement
+  their own stated rules — window bounding, entitlement/cross-promo/
+  played exclusions, per-podcast dedup. It catches logic regressions
+  (e.g. a started episode silently exempted from the window, which is
+  what shipped as a real bug on 2026-09-10) that pure eyeballing can
+  miss. It does NOT and cannot validate that ZPLAYSTATE, ZUNPLAYEDTAB,
+  ZENTITLEMENTSTATE etc. mean what we think they mean in the real
+  library — that's a claim about Apple's undocumented schema, and the
+  only way to check it is against the real Podcasts.app UI (screenshot
+  from the user). So: run `make test` for logic changes, but still
+  verify against `make all` and a fresh screenshot whenever a change
+  touches what counts as "unplayed" in the first place.
