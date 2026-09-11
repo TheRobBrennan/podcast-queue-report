@@ -8,13 +8,15 @@
 > versions. Treat this as a working example to read, learn from, and adapt,
 > not a plug-and-play tool. See "Known caveats" below.
 
-Reads a local Apple Podcasts library (SQLite) and generates a summary of the
-"Latest Episodes" unplayed queue plus listening stats, with a letter grade
-for how many days behind the oldest unplayed episode is.
+Reads a local Apple Podcasts library (SQLite) and generates a summary of
+your genuinely unplayed episode backlog plus listening stats, with a
+letter grade for how many days behind the oldest unplayed episode is.
 
 ## In action
 
-The source data — Apple Podcasts' own "Latest Episodes" unplayed queue view:
+Apple Podcasts' own "Latest Episodes" view — a recency feed, not an
+unplayed filter (see "Known caveats" below for why this repo's queue
+doesn't try to match it):
 
 ![Apple Podcasts Latest Episodes view](assets/podcasts-app-latest-episodes.png)
 
@@ -220,20 +222,24 @@ after the lid opens. See **[docs/LOCAL-SCHEDULING.md](docs/LOCAL-SCHEDULING.md)*
 
 ## Known caveats
 
-- The unplayed-queue detection (`ZUNPLAYEDTAB=1` for subscribed podcasts,
-  one episode per podcast — its newest unplayed — capped to the 12 most
-  recent across all shows, via `LATEST_EPISODES_LIMIT` in
-  `podcast_summary.py`) was reverse-engineered from Apple's undocumented
-  internal schema by comparing SQL query output against screenshots of the
-  actual Podcasts.app "Latest Episodes" view. It is a heuristic, not
-  documented Apple behavior — it could break on a different library, macOS
-  version, or Podcasts app update. Two earlier versions of this heuristic
-  were tried and disproven by screenshot: a 20-hour publish-gap cluster, and
-  an uncapped one-per-podcast list (which surfaced years-old unplayed
-  episodes from dormant subscriptions). The count of 12 was inferred, not
-  confirmed as an official constant — if your queue ever looks off by a
-  fixed number of episodes, that's the first thing to re-verify against a
-  fresh screenshot.
+- The unplayed-queue detection (`get_unplayed_queue()` in
+  `podcast_summary.py`: real played state, `ZPLAYSTATE != 2`, over a
+  rolling `UNPLAYED_QUEUE_WINDOW_DAYS` window — 21 days as of this
+  writing) was reverse-engineered from Apple's undocumented internal
+  schema. It does **not** try to match Apple's own "Latest Episodes"
+  view in Podcasts.app — that view turned out to be a plain recency
+  feed with no played/unplayed filtering at all (confirmed 2026-09-10:
+  a fully-played episode rendered there identically to genuinely
+  unplayed ones), so matching it was never going to produce a correct
+  "unplayed" report. This is a heuristic over Apple's undocumented
+  schema, not documented behavior — it could break on a different
+  library, macOS version, or Podcasts app update, and the window value
+  itself was calibrated by direct observation (scrolling Rob's own
+  Latest Episodes list to its oldest row), not derived from any
+  readable setting. See the long numbered history in
+  `get_unplayed_queue()`'s docstring for every wrong turn this took on
+  the way here. If your queue ever looks off, re-verify the same way:
+  a fresh screenshot of the real app, not another guess.
 - "Played" stats count any episode with a `ZLASTDATEPLAYED` timestamp, not
   necessarily ones fully finished — there's no reliable "completed" flag in
   the data, so totals (especially all-time) likely overcount true full

@@ -2,12 +2,13 @@ SHELL := /bin/bash
 PYTHON ?= python3
 RUN_JSON ?= /tmp/podcast_run.json
 
-.PHONY: help setup run chat sms email html open all discord cron unlock commit clean
+.PHONY: help setup run chat sms email html open all discord cron unlock commit clean test
 
 help:
 	@echo "Podcast Queue Report — available commands:"
 	@echo ""
 	@echo "  make setup             Copy .env.example -> .env (first run only)"
+	@echo "  make test              Run the unit test suite (tests/)"
 	@echo "  make run               Query the Podcasts DB, write $(RUN_JSON)"
 	@echo "  make chat              Print the chat summary"
 	@echo "  make sms               Text the report via Messages.app (needs REPORT_PHONE in .env)"
@@ -31,6 +32,9 @@ setup:
 	@if [ -z "$$(git config user.email 2>/dev/null)" ]; then \
 		echo "Reminder: also run 'git config user.email you@example.com' and 'git config user.name \"Your Name\"' in this repo before committing."; \
 	fi
+
+test:
+	@$(PYTHON) -m unittest discover -s tests -v
 
 run:
 	@echo "🎧 Catching up on your queue..."

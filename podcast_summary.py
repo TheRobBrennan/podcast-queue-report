@@ -384,7 +384,7 @@ def refresh_podcasts_feeds(db_path=DB_PATH, wait_seconds=REFRESH_WAIT_SECONDS):
     except Exception:
         return False
 
-UNPLAYED_QUEUE_WINDOW_DAYS = 60
+UNPLAYED_QUEUE_WINDOW_DAYS = 21
 
 def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     """The unplayed queue: every never-started episode published in the
@@ -412,10 +412,20 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     never appeared in this queue at any point, played or not. Chasing
     "does this match Latest Episodes" was chasing a screen that was never
     gating on the thing this function is named for. Per Rob, 2026-09-10:
-    build this from real ZPLAYSTATE instead, scoped to a plain two-month
+    build this from real ZPLAYSTATE instead, scoped to a plain rolling
     window - narrower than "everything ever unplayed" (dismissed early as
     item 2 below, for surfacing long-dormant subscriptions) but no longer
-    trying to visually match any particular Podcasts.app screen.
+    trying to visually match Latest Episodes' behavior (recency
+    regardless of played status). The window value itself (21 days) was
+    picked by direct observation, not by reasoning about Apple's
+    behavior: confirmed live that the topmost row in Rob's own Latest
+    Episodes list is never-played and dated exactly 21 days back, and
+    that a same-day, also-never-played episode from a day further back
+    (2026-08-19, Software Engineering Radio / Talk Python To Me) does
+    NOT appear above it - so 21 days is a real, checked cutoff for this
+    library right now, not a guess. If it ever needs revisiting, check
+    the same way: scroll Latest Episodes to its oldest row and diff
+    against what this window returns, rather than assuming a number.
 
     Numbered history from the Latest-Episodes-matching era - the
     entitlement and cross-promo filters below are still real fixes for
@@ -531,13 +541,17 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
        10 below rather than kept as a secondary condition.
 
     10. The pivot, 2026-09-10 (see the top of this docstring): stopped
-        trying to match Latest Episodes at all. ZUNPLAYEDTAB and
-        ZBACKCATALOG are both gone from the query - neither reliably
-        reflects played status (that's exactly what going down the
-        ZBACKCATALOG path in 9 got wrong). The only signal that matters
-        now is ZPLAYSTATE != 2, and the window widened from 30 to 60 days
-        per Rob so the narrower non-Latest-Episodes view still surfaces a
-        reasonable backlog rather than an exhaustive one.
+        trying to match Latest Episodes' *behavior* (recency regardless
+        of played status). ZUNPLAYEDTAB and ZBACKCATALOG are both gone
+        from the query - neither reliably reflects played status (that's
+        exactly what going down the ZBACKCATALOG path in 9 got wrong).
+        The only signal that matters now is ZPLAYSTATE != 2. The window
+        went 30 -> 60 -> 21 days over the course of that one pass: 60 was
+        an unverified guess (Rob, correctly, asked where 541 episodes
+        came from when he'd never seen anywhere near that many in the
+        app); 21 is what direct observation of Rob's own Latest Episodes
+        list actually confirmed - see the paragraph at the top of this
+        docstring for how that was checked.
 
     Also caught in the same pass: a playstate=2 (fully played) episode -
     Elevate Classics: Klaus Kleinfeld, played on 2026-09-10 - kept
@@ -548,12 +562,15 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     outright - a finished episode should never re-enter the queue as
     either fresh or pinned."""
     CROSS_PROMO_DISCLAIMER = "not affiliated with, endorsed by, or produced in conjunction with"
+    STUCK_ASSET_GRACE_HOURS = 24
     now_cd = dt_to_cd(now_dt)
     window_cd = dt_to_cd(now_dt - datetime.timedelta(days=window_days))
+    stuck_asset_cutoff_cd = dt_to_cd(now_dt - datetime.timedelta(hours=STUCK_ASSET_GRACE_HOURS))
     cur.execute('''
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
-               e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, e.ZITEMDESCRIPTION
+               e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, e.ZITEMDESCRIPTION,
+               e.ZASSETURL, e.ZBYTESIZE
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
           and e.ZENTITLEMENTSTATE=0 and e.ZPLAYSTATE != 2
@@ -564,8 +581,20 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     fresh = []
     started = []
     seen_started = set()
-    for title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played, artwork_template, description in rows:
+    for (title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played,
+         artwork_template, description, asset_url, byte_size) in rows:
         if (dur or 0) <= 0 and CROSS_PROMO_DISCLAIMER in (description or "").casefold():
+            continue
+        # A zero-duration episode with no asset at all can be legitimate
+        # (Apple hasn't finished processing a brand-new upload yet - see
+        # the docstring's item 8) or genuinely stuck (the enclosure never
+        # arrived). Give it STUCK_ASSET_GRACE_HOURS before treating a
+        # missing asset as permanent. Caught 2026-09-10: "Lauren Esposito
+        # on Workforce Orchestration!" (Marketing Over Coffee, published
+        # 2026-08-21, ZASSETURL/ZBYTESIZE still empty 20 days later)
+        # surfaced as "UP NEXT - 0 seconds left to finish", which is
+        # nonsensical - there's nothing to finish.
+        if (dur or 0) <= 0 and not asset_url and not byte_size and pub < stuck_asset_cutoff_cd:
             continue
         is_started = playstate == 1 or (playhead or 0) > 0
         # window_days bounds every candidate, started or not - no
