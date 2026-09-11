@@ -394,44 +394,14 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     but not finished, which stays in the view no matter how far outside
     the window its publish date has fallen.
 
-    This is genuinely-unplayed status (ZPLAYSTATE 0 or 1) over a plain
-    rolling window - nothing more. It does NOT try to match Apple's own
-    "Latest Episodes" view in Podcasts.app, on purpose, after nine rounds
-    of doing exactly that and getting it wrong each time (numbered below,
-    kept for the record). The premise itself turned out to be broken:
-    caught 2026-09-10 when Rob screenshotted his full "Latest Episodes"
-    list and it included "Elevate Classics: Klaus Kleinfeld..." with a
-    plain, un-checkmarked play button - indistinguishable from every
-    genuinely unplayed row around it - despite that episode's ZPLAYSTATE
-    being 2 (finished) in the library. Latest Episodes turned out to be a
-    recency feed of everything recently published, regardless of played
-    status, not an unplayed view at all - it also included over a dozen
-    shows (Talk Python, ATP, Grumpy Old Geeks, RedHanded, Sound of Hockey,
-    National Park After Dark, Park Predators, MrBallen, Morbid, AirSpace,
-    Software Engineering Radio, The Inches, Inside the Arena...) that
-    never appeared in this queue at any point, played or not. Chasing
-    "does this match Latest Episodes" was chasing a screen that was never
-    gating on the thing this function is named for. Per Rob, 2026-09-10:
-    build this from real ZPLAYSTATE instead, scoped to a plain rolling
-    window - narrower than "everything ever unplayed" (dismissed early as
-    item 2 below, for surfacing long-dormant subscriptions) but no longer
-    trying to visually match Latest Episodes' behavior (recency
-    regardless of played status). The window value itself (21 days) was
-    picked by direct observation, not by reasoning about Apple's
-    behavior: confirmed live that the topmost row in Rob's own Latest
-    Episodes list is never-played and dated exactly 21 days back, and
-    that a same-day, also-never-played episode from a day further back
-    (2026-08-19, Software Engineering Radio / Talk Python To Me) does
-    NOT appear above it - so 21 days is a real, checked cutoff for this
-    library right now, not a guess. If it ever needs revisiting, check
-    the same way: scroll Latest Episodes to its oldest row and diff
-    against what this window returns, rather than assuming a number.
-
-    Numbered history from the Latest-Episodes-matching era - the
-    entitlement and cross-promo filters below are still real fixes for
-    real problems and remain in place; the window-matching reasoning
-    (1, 3, 5, 6, 9) is obsolete now that the target isn't Latest Episodes
-    at all:
+    Matches Apple's own "Latest Episodes" view in Podcasts.app: every
+    episode with ZUNPLAYEDTAB=1 (the normal "new episode arrived unplayed"
+    flag) OR ZBACKCATALOG=1 (covers a show whose episodes never got that
+    flag set - see item 9), scoped to a rolling window (see item 10 for
+    how the window value was picked) and per-podcast deduped only for
+    started episodes. Getting here took ten wrong turns, each "confirmed"
+    against one screenshot and disproven by the next - numbered below,
+    kept for the record because the same mistakes are easy to repeat:
       1. A 20-hour publish-gap cluster — wrong because shows published well
          over 20h apart were still both present, one per show.
       2. Every unplayed episode, one per podcast, uncapped — dismissed at
@@ -533,34 +503,39 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     the original duration-only version of this was written, exactly one
     had ZDURATION <= 0 - this drop.
 
-    9. [Superseded by 10] Requiring ZUNPLAYEDTAB=1 on never-started
-       candidates, later OR'd with ZBACKCATALOG=1 to recover a show whose
-       episodes never got the tab flag set - both papered over the real
-       problem instead of fixing it, since the target itself (Latest
-       Episodes) wasn't measuring played status. Superseded outright by
-       10 below rather than kept as a secondary condition.
+    9. Requiring ZUNPLAYEDTAB=1 alone on never-started candidates -
+       incomplete, caught 2026-09-10. Eight Elevate with Robert Glazer
+       episodes (Aug 22 - Sep 8) were plainly unplayed in Rob's own
+       Latest Episodes view - full play button, no checkmark - but never
+       appeared in this queue: ZPLAYSTATE=0, ZUNPLAYEDTAB=0, and a manual
+       File > Refresh Feeds didn't change that (so it wasn't the
+       "row hasn't landed yet" case refresh_podcasts_feeds() handles).
+       What they shared instead was ZBACKCATALOG=1 - across the whole
+       library, right now, every never-started episode inside the window
+       with ZBACKCATALOG=1 belongs to this one show, so OR'ing it in only
+       affects the show that actually needs it.
 
-    10. The pivot, 2026-09-10 (see the top of this docstring): stopped
-        trying to match Latest Episodes' *behavior* (recency regardless
-        of played status). ZUNPLAYEDTAB and ZBACKCATALOG are both gone
-        from the query - neither reliably reflects played status (that's
-        exactly what going down the ZBACKCATALOG path in 9 got wrong).
-        The only signal that matters now is ZPLAYSTATE != 2. The window
-        went 30 -> 60 -> 21 days over the course of that one pass: 60 was
-        an unverified guess (Rob, correctly, asked where 541 episodes
-        came from when he'd never seen anywhere near that many in the
-        app); 21 is what direct observation of Rob's own Latest Episodes
-        list actually confirmed - see the paragraph at the top of this
-        docstring for how that was checked.
-
-    Also caught in the same pass: a playstate=2 (fully played) episode -
-    Elevate Classics: Klaus Kleinfeld, played on 2026-09-10 - kept
-    resurfacing as a "fresh" never-started item forever, because
-    ZUNPLAYEDTAB stayed 1 after playback and ZPLAYHEAD resets to 0 once
-    finished, so the old is_started check (playstate==1 or playhead>0)
-    missed it entirely. ZPLAYSTATE=2 is excluded from the base query
-    outright - a finished episode should never re-enter the queue as
-    either fresh or pinned."""
+    10. [Wrong turn, corrected same day] Immediately after fixing 9,
+        wrongly concluded the whole ZUNPLAYEDTAB/ZBACKCATALOG approach
+        was broken and replaced it with a blanket ZPLAYSTATE != 2 filter
+        instead, on the theory that ZPLAYSTATE=2 means "finished" - based
+        on one episode (Elevate Classics: Klaus Kleinfeld) that LOOKED
+        finished by that column. It doesn't mean finished: ZLASTDATEPLAYED
+        was NULL for that episode and for sixteen others this blanket
+        filter silently dropped from real reports before Rob caught it by
+        literally counting every row in four full screenshots of his
+        Latest Episodes list against their actual database state - all
+        27 were genuinely unplayed, contradicting the filter outright.
+        ZPLAYSTATE=2 with no ZLASTDATEPLAYED is some other state
+        entirely, not "played" - a column whose name looks obvious is
+        exactly the kind of thing this schema keeps punishing that
+        assumption on. The ZPLAYSTATE != 2 filter is gone. The window
+        (30 -> 60 -> 21 days, landing on 21 by direct observation - the
+        topmost row in Rob's own Latest Episodes list is dated exactly
+        21 days back, and a same-day episode one day further back does
+        not appear above it) and the uniform window-bounding fix (see
+        below) both survived this detour and are still in effect; only
+        the played-state reasoning was wrong."""
     CROSS_PROMO_DISCLAIMER = "not affiliated with, endorsed by, or produced in conjunction with"
     STUCK_ASSET_GRACE_HOURS = 24
     now_cd = dt_to_cd(now_dt)
@@ -573,7 +548,7 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
                e.ZASSETURL, e.ZBYTESIZE
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
-          and e.ZENTITLEMENTSTATE=0 and e.ZPLAYSTATE != 2
+          and e.ZENTITLEMENTSTATE=0 and (e.ZUNPLAYEDTAB=1 or e.ZBACKCATALOG=1)
         order by e.ZPUBDATE desc
     ''', (now_cd,))
     rows = cur.fetchall()

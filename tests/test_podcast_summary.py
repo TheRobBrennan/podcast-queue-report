@@ -3,15 +3,20 @@
 These build a synthetic in-memory SQLite database that mirrors just the
 columns get_unplayed_queue() actually reads from Apple's real
 MTLibrary.sqlite, then exercise the filtering/window/dedup logic against
-known inputs. They do NOT validate that ZPLAYSTATE, ZENTITLEMENTSTATE, etc.
-mean what we think they mean in the real library - that's a claim about
-Apple's undocumented schema and can only be checked against the real
-Podcasts.app UI (see CLAUDE.md and the get_unplayed_queue docstring's long
-history of screenshot-driven corrections). What these tests DO guarantee is
-that the code correctly implements its own stated rules - window bounding,
-entitlement/cross-promo/played exclusions, per-podcast dedup - so a change
-to the surrounding logic can't silently break those rules the way the
-2026-09-10 "78 days behind under a 60-day window" bug did.
+known inputs. They do NOT validate that ZUNPLAYEDTAB, ZBACKCATALOG,
+ZENTITLEMENTSTATE etc. mean what we think they mean in the real library -
+that's a claim about Apple's undocumented schema and can only be checked
+against the real Podcasts.app UI (see CLAUDE.md and the
+get_unplayed_queue docstring's long history of screenshot-driven
+corrections, including one - ZPLAYSTATE=2 meaning "finished" - that
+turned out to be flatly wrong: it silently dropped 16 genuinely-unplayed
+episodes from real reports until Rob caught it by counting every row in
+four full screenshots against their actual database state). What these
+tests DO guarantee is that the code correctly implements its own stated
+rules - window bounding, entitlement/cross-promo/stuck-asset exclusions,
+per-podcast dedup - so a change to the surrounding logic can't silently
+break those rules the way the "78 days behind under a 60-day window" and
+"ZPLAYSTATE=2 means played" bugs did.
 
 Run with: python3 -m unittest tests.test_podcast_summary -v
 """
@@ -50,7 +55,9 @@ def make_db():
             ZENTITLEMENTSTATE integer,
             ZITEMDESCRIPTION text,
             ZASSETURL text,
-            ZBYTESIZE integer
+            ZBYTESIZE integer,
+            ZUNPLAYEDTAB integer,
+            ZBACKCATALOG integer
         )
     """)
     return con
@@ -59,7 +66,12 @@ def make_db():
 class QueueFixture:
     """Helper for building podcast/episode rows without hand-writing SQL
     in every test. Dates are plain datetimes; conversion to Apple's
-    Core Data epoch happens here."""
+    Core Data epoch happens here.
+
+    unplayedtab defaults to 1 (the normal case: a freshly-arrived episode
+    gets the "new episode unplayed" flag set) so tests that aren't
+    specifically about ZUNPLAYEDTAB/ZBACKCATALOG don't need to think
+    about them."""
 
     def __init__(self, con):
         self.con = con
@@ -80,7 +92,8 @@ class QueueFixture:
 
     def episode(self, podcast_pk, title, pubdate, duration=1800, playhead=0,
                 playstate=0, entitlement=0, last_played=None, description="",
-                asset_url="https://example.com/audio.mp3", byte_size=12345):
+                asset_url="https://example.com/audio.mp3", byte_size=12345,
+                unplayedtab=1, backcatalog=0):
         pk = self._next_ep_pk
         self._next_ep_pk += 1
         track_id = self._next_track_id
@@ -88,11 +101,11 @@ class QueueFixture:
         self.cur.execute(
             "insert into ZMTEPISODE (Z_PK, ZPODCAST, ZTITLE, ZDURATION, ZPUBDATE, ZPLAYHEAD, "
             "ZSTORETRACKID, ZPLAYSTATE, ZLASTDATEPLAYED, ZENTITLEMENTSTATE, ZITEMDESCRIPTION, "
-            "ZASSETURL, ZBYTESIZE) "
-            "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "ZASSETURL, ZBYTESIZE, ZUNPLAYEDTAB, ZBACKCATALOG) "
+            "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (pk, podcast_pk, title, duration, ps.dt_to_cd(pubdate), playhead, track_id,
              playstate, ps.dt_to_cd(last_played) if last_played else None,
-             entitlement, description, asset_url, byte_size),
+             entitlement, description, asset_url, byte_size, unplayedtab, backcatalog),
         )
         return pk
 
@@ -145,24 +158,54 @@ class GetUnplayedQueueTests(unittest.TestCase):
             self.assertGreaterEqual(e["pubdate"], cutoff,
                                      f"{e['title']!r} is older than the {21}-day window")
 
-    def test_excludes_fully_played_episodes(self):
-        """ZPLAYSTATE=2 (finished) must never appear, regardless of how
-        recently it was published or how stale ZPLAYHEAD/ZUNPLAYEDTAB-style
-        signals might make it look. Regression for the Klaus Kleinfeld bug:
-        a fully-played episode kept resurfacing as 'fresh'."""
+    def test_playstate_2_does_not_exclude_an_episode(self):
+        """Regression for the 2026-09-10 bug: ZPLAYSTATE=2 does NOT mean
+        'finished' in this schema - confirmed wrong when a blanket
+        ZPLAYSTATE != 2 filter silently dropped 16 genuinely-unplayed
+        episodes (ZLASTDATEPLAYED was NULL on every one of them) from
+        real reports. An episode with ZUNPLAYEDTAB=1 and ZPLAYSTATE=2
+        must still appear."""
         pod = self.fx.podcast("Show D")
         self.fx.episode(
-            pod, "already finished", self.now - datetime.timedelta(days=1),
-            playstate=2, playhead=0,
+            pod, "playstate 2 but never actually played",
+            self.now - datetime.timedelta(days=1),
+            playstate=2, playhead=0, last_played=None, unplayedtab=1,
         )
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
-        self.assertNotIn("already finished", self.titles(queue))
+        self.assertIn("playstate 2 but never actually played", self.titles(queue))
+
+    def test_backcatalog_recovers_episode_missing_unplayedtab(self):
+        """Regression for the 2026-09-10 undercount bug: a show whose
+        episodes never got ZUNPLAYEDTAB set (Elevate with Robert Glazer,
+        after being re-followed) still shows if ZBACKCATALOG=1."""
+        pod = self.fx.podcast("Show E")
+        self.fx.episode(
+            pod, "backcatalog import, no unplayedtab flag",
+            self.now - datetime.timedelta(days=5),
+            unplayedtab=0, backcatalog=1,
+        )
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        self.assertIn("backcatalog import, no unplayedtab flag", self.titles(queue))
+
+    def test_neither_flag_set_excludes_episode(self):
+        """An episode with neither ZUNPLAYEDTAB nor ZBACKCATALOG set is
+        not part of the unplayed queue - this is the normal case for the
+        vast majority of a show's back-catalog that Rob has already
+        listened to (or that simply never entered the tab)."""
+        pod = self.fx.podcast("Show F")
+        self.fx.episode(
+            pod, "neither flag set",
+            self.now - datetime.timedelta(days=1),
+            unplayedtab=0, backcatalog=0,
+        )
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        self.assertNotIn("neither flag set", self.titles(queue))
 
     def test_excludes_unentitled_episodes(self):
         """A paid-subscriber-exclusive episode metadata-cached without
         entitlement (ZENTITLEMENTSTATE=2) should never appear - Apple's own
         UI won't surface content it won't let you play."""
-        pod = self.fx.podcast("Show E")
+        pod = self.fx.podcast("Show G")
         self.fx.episode(
             pod, "patreon bonus", self.now - datetime.timedelta(days=1),
             entitlement=2,
@@ -177,7 +220,7 @@ class GetUnplayedQueueTests(unittest.TestCase):
         self.assertNotIn("orphaned episode", self.titles(queue))
 
     def test_cross_promo_zero_duration_with_disclaimer_excluded(self):
-        pod = self.fx.podcast("Show F")
+        pod = self.fx.podcast("Show H")
         disclaimer = ("This podroll episode is not affiliated with, endorsed by, "
                        "or produced in conjunction with the host podcast feed.")
         self.fx.episode(
@@ -192,7 +235,7 @@ class GetUnplayedQueueTests(unittest.TestCase):
         processing yet also has ZDURATION=0, but has no cross-promo
         disclaimer in its description - it must NOT be filtered out just
         because duration is zero (the original, too-broad fix for this)."""
-        pod = self.fx.podcast("Show G")
+        pod = self.fx.podcast("Show I")
         self.fx.episode(
             pod, "brand new, still processing", self.now - datetime.timedelta(hours=1),
             duration=0, description="A normal episode description.",
@@ -231,7 +274,7 @@ class GetUnplayedQueueTests(unittest.TestCase):
         """A zero-duration episode that DOES have an asset (bytesize/url
         present) is a different situation entirely and is not touched by
         the stuck-asset exclusion."""
-        pod = self.fx.podcast("Show K")
+        pod = self.fx.podcast("Show J")
         self.fx.episode(
             pod, "zero duration but has an asset",
             self.now - datetime.timedelta(days=20),
@@ -243,7 +286,7 @@ class GetUnplayedQueueTests(unittest.TestCase):
     def test_started_episodes_dedup_per_podcast(self):
         """Only one started-but-unfinished episode per podcast is pinned,
         even if a show somehow has two in progress."""
-        pod = self.fx.podcast("Show H")
+        pod = self.fx.podcast("Show K")
         self.fx.episode(
             pod, "started first", self.now - datetime.timedelta(days=2),
             playhead=10, playstate=1, last_played=self.now - datetime.timedelta(hours=2),
@@ -259,14 +302,14 @@ class GetUnplayedQueueTests(unittest.TestCase):
     def test_fresh_episodes_are_not_deduped(self):
         """Multiple never-started episodes from the same podcast inside the
         window all show - no per-podcast cap on fresh episodes."""
-        pod = self.fx.podcast("Show I")
+        pod = self.fx.podcast("Show L")
         self.fx.episode(pod, "fresh one", self.now - datetime.timedelta(days=2))
         self.fx.episode(pod, "fresh two", self.now - datetime.timedelta(days=1))
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
         self.assertTrue({"fresh one", "fresh two"} <= self.titles(queue))
 
     def test_queue_sorted_newest_first(self):
-        pod = self.fx.podcast("Show J")
+        pod = self.fx.podcast("Show M")
         self.fx.episode(pod, "older", self.now - datetime.timedelta(days=10))
         self.fx.episode(pod, "newer", self.now - datetime.timedelta(days=1))
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
