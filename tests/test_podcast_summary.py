@@ -257,15 +257,38 @@ class GetUnplayedQueueTests(unittest.TestCase):
     def test_stuck_zero_duration_no_asset_excluded_after_grace_period(self):
         """Regression for the 2026-09-10 'UP NEXT - 0 seconds left to
         finish' bug: a zero-duration episode with no asset at all, still
-        stuck 20 days after publish, must be excluded."""
+        stuck 20 days after publish, must be excluded - when it reaches
+        the queue only via ZBACKCATALOG=1, not ZUNPLAYEDTAB=1 (see the
+        2026-09-12 fix / item 12 in get_unplayed_queue's docstring)."""
         pod = self.fx.podcast("Marketing Over Coffee")
         self.fx.episode(
             pod, "Lauren Esposito on Workforce Orchestration!",
             self.now - datetime.timedelta(days=20),
             duration=0, asset_url=None, byte_size=0,
+            unplayedtab=0, backcatalog=1,
         )
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
         self.assertNotIn("Lauren Esposito on Workforce Orchestration!", self.titles(queue))
+
+    def test_stuck_zero_duration_no_asset_kept_when_unplayedtab_set(self):
+        """Regression for the 2026-09-12 undercount bug: "Episode 27.1:
+        Rumor to Reality" (Core Intuition, externally hosted on Libsyn)
+        had ZDURATION=0 and no asset 29+ hours after publish - past the
+        24h grace period - yet had ZUNPLAYEDTAB=1 and was genuinely
+        playable in Rob's own Latest Episodes view (23 episodes there,
+        22 in the report). An episode Apple itself flags ZUNPLAYEDTAB=1
+        must not be excluded by the stuck-asset grace period, even past
+        24h - that flag is stronger evidence than a missing local asset
+        cache."""
+        pod = self.fx.podcast("Core Intuition")
+        self.fx.episode(
+            pod, "Episode 27.1: Rumor to Reality",
+            self.now - datetime.timedelta(hours=29),
+            duration=0, asset_url=None, byte_size=0,
+            unplayedtab=1, backcatalog=0,
+        )
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        self.assertIn("Episode 27.1: Rumor to Reality", self.titles(queue))
 
     def test_zero_duration_no_asset_kept_within_grace_period(self):
         """A brand-new episode with no asset yet (still processing) is

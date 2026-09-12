@@ -557,7 +557,19 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
         corrupting the "days behind" grade the way item 9's bug did,
         main() now computes the oldest/days-behind figure from only the
         never-started subset of the queue - an episode you're actively
-        working through isn't "behind", it's in progress."""
+        working through isn't "behind", it's in progress.
+
+    12. The STUCK_ASSET_GRACE_HOURS cutoff (item 8) excluded a real
+        episode - caught 2026-09-12. "Episode 27.1: Rumor to Reality"
+        (Core Intuition, externally hosted on Libsyn) never got
+        ZASSETURL/ZBYTESIZE populated locally, even 29+ hours after
+        publish - past the 24h grace period - yet had ZUNPLAYEDTAB=1 and
+        was genuinely playable in Rob's own Latest Episodes view the
+        whole time (23 episodes there, 22 in the report). The grace
+        period now only excludes a stuck-asset candidate that reached the
+        query solely via ZBACKCATALOG=1; ZUNPLAYEDTAB=1 - Apple's own
+        "belongs in the unplayed view" flag - is trusted regardless of
+        how long the asset has been missing."""
     CROSS_PROMO_DISCLAIMER = "not affiliated with, endorsed by, or produced in conjunction with"
     STUCK_ASSET_GRACE_HOURS = 24
     ACTIVE_RECENCY_HOURS = 48
@@ -569,7 +581,7 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
         select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
                e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, e.ZITEMDESCRIPTION,
-               e.ZASSETURL, e.ZBYTESIZE
+               e.ZASSETURL, e.ZBYTESIZE, e.ZUNPLAYEDTAB
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         where p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
           and e.ZENTITLEMENTSTATE=0 and (e.ZUNPLAYEDTAB=1 or e.ZBACKCATALOG=1)
@@ -581,7 +593,7 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     started = []
     seen_started = set()
     for (title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played,
-         artwork_template, description, asset_url, byte_size) in rows:
+         artwork_template, description, asset_url, byte_size, unplayed_tab) in rows:
         if (dur or 0) <= 0 and CROSS_PROMO_DISCLAIMER in (description or "").casefold():
             continue
         # A zero-duration episode with no asset at all can be legitimate
@@ -593,7 +605,22 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
         # 2026-08-21, ZASSETURL/ZBYTESIZE still empty 20 days later)
         # surfaced as "UP NEXT - 0 seconds left to finish", which is
         # nonsensical - there's nothing to finish.
-        if (dur or 0) <= 0 and not asset_url and not byte_size and pub < stuck_asset_cutoff_cd:
+        #
+        # 12. Exempt ZUNPLAYEDTAB=1 episodes from the grace-period cutoff -
+        #     caught 2026-09-12. "Episode 27.1: Rumor to Reality" (Core
+        #     Intuition, externally hosted on Libsyn) was published
+        #     2026-09-11 15:11 UTC with ZASSETURL/ZBYTESIZE never
+        #     populated - past the 24h grace period at every report run
+        #     since - yet it sat in Rob's own Latest Episodes view the
+        #     whole time with a working Play button (Rob counted 23,
+        #     the report said 22). Unlike Lauren Esposito (this item's
+        #     original case - both flags 0 by the time it was caught, so
+        #     it no longer even matches the WHERE clause), this episode
+        #     has ZUNPLAYEDTAB=1: Apple's own "genuinely unplayed, belongs
+        #     in the view" flag. Trust it - the grace-period exclusion now
+        #     only fires for a candidate that qualified solely via
+        #     ZBACKCATALOG=1.
+        if (dur or 0) <= 0 and not asset_url and not byte_size and not unplayed_tab and pub < stuck_asset_cutoff_cd:
             continue
         is_started = playstate == 1 or (playhead or 0) > 0
         # Fresh (never-started) candidates are bounded by window_days on
