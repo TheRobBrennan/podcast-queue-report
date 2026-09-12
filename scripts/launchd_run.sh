@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Local scheduled run of the podcast queue report (launchd agent
-# ai.sploosh.podcast-queue-report). Discord + email - see CLAUDE.md.
+# ai.sploosh.podcast-queue-report). Discord + open the HTML report in the
+# default browser - see CLAUDE.md.
 #
 # Guards against the back-to-back-runs problem: launchd coalesces missed
 # StartCalendarInterval firings into a single run on wake, and MIN_GAP_MINUTES
@@ -41,7 +42,7 @@ log "START"
 # without posting to Discord or sending email.
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   if make run; then
-    log "OK (dry run): queried the Podcasts DB, skipped Discord + email"
+    log "OK (dry run): queried the Podcasts DB, skipped Discord + browser"
     exit 0
   else
     log "FAIL (dry run): make run exited $?"
@@ -50,11 +51,11 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
 fi
 
 # `make cron` queries the Podcasts DB exactly once, then posts to Discord
-# and sends the email report. Do not use `make all` - it drags in the sms
-# target too.
+# and opens the HTML report in the default browser. Do not use `make all`
+# - it drags in the sms and email targets too.
 if make cron; then
   date +%s > "$STAMP_FILE"
-  log "OK: posted to Discord and sent email"
+  log "OK: posted to Discord and opened the HTML report"
 else
   log "FAIL: make cron exited $?"
   exit 1

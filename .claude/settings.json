@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd *)",
+      "Bash(make help)",
+      "Bash(make setup)",
+      "Bash(make test)",
+      "Bash(make run)",
+      "Bash(make chat)",
+      "Bash(make html)",
+      "Bash(make open)",
+      "Bash(make discord)",
+      "Bash(make cron)",
+      "Bash(make clean)",
+      "Bash(python3 podcast_summary.py*)",
+      "Bash(python3 render_report.py *)",
+      "Bash(python3 scripts/post_discord.py*)",
+      "Bash(python3 -m unittest*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)"
+    ]
+  }
+}
