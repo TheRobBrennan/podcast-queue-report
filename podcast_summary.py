@@ -354,10 +354,18 @@ def refresh_podcasts_feeds(db_path=DB_PATH, wait_seconds=REFRESH_WAIT_SECONDS):
     the wait (i.e. a refresh was actually observed to land), else False.
     """
     try:
+        # 30s, not 5s: the first-ever call to System Events triggers a macOS
+        # Automation ("access data from other apps") permission dialog, and
+        # that decision is only recorded if the user gets to click Allow
+        # before this subprocess is killed. A short timeout here means the
+        # dialog gets orphaned mid-click and nothing is ever persisted, so
+        # it prompts again on every subsequent run forever. Once granted,
+        # this call returns in well under a second, so the longer timeout
+        # costs nothing on every run after the first.
         running = subprocess.run(
             ["osascript", "-e",
              'tell application "System Events" to exists application process "Podcasts"'],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=30,
         )
         if running.returncode != 0 or running.stdout.strip() != "true":
             return False
