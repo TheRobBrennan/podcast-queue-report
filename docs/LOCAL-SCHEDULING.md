@@ -169,12 +169,56 @@ OS upgrade, the symptom is a permissions error from `podcast_summary.py` in
 `run.log`; grant Full Disk Access to `/bin/zsh` in System Settings ->
 Privacy & Security.
 
-### Discord + email, not SMS
+### Discord + open-in-browser, not email or SMS
 
-The agent runs `make cron` (Discord post + Outlook email), not `make all`.
-`make all` also drags in the `sms` target, which stays off for the scheduled
-agent (`REPORT_PHONE` left blank in `.env`) — Messages.app automation is
-noisier to run unattended than Outlook's AppleScript send. Email works
-unattended because launchd *Agents* (unlike Daemons) run inside the user's
-GUI session, so Apple Events / Automation permissions granted once to
-`osascript` still apply.
+The agent runs `make cron`: Discord post + opening the HTML report in the
+default browser. As of the 2026.09.12 fix (`d07e16b` /
+[#27](https://github.com/TheRobBrennan/podcast-queue-report/pull/27)), it no
+longer emails - `make cron` used to also send via Outlook's AppleScript,
+which is why older notes here mentioned email. `make all` (which also drags
+in the `sms` target) is never used for the scheduled agent; Messages.app
+automation is noisier to run unattended, so `REPORT_PHONE` stays blank in
+`.env` for this path regardless.
+
+### One-time Automation grant for System Events
+
+`podcast_summary.py`'s `refresh_podcasts_feeds()` (added in `f92a441`, to fix
+an unplayed-queue undercount - see `CLAUDE.md`) shells out to `osascript` on
+**every** report run to ask System Events whether Podcasts.app is running,
+and if so to click its "Refresh Feeds" menu item. That is a distinct Apple
+Events target from anything else in this repo, so the first time it ever
+runs, macOS raises an Automation permission dialog - "`python3.14` would
+like to access data from other apps" - separate from (and unrelated to) any
+permission ever granted to `osascript` for Outlook/Mail.
+
+This is a one-time, per-binary OS grant, not a per-run one. Click Allow and
+it persists in System Settings -> Privacy & Security -> Automation, listed
+under `python3.14`; every run after that returns in well under a second with
+no dialog. It only needs re-granting if the underlying `python3.14` binary
+is ever replaced (e.g. a Homebrew version bump), since that changes the code
+identity macOS ties the grant to.
+
+The one hazard is racing the dialog itself: the check originally used a 5s
+`subprocess` timeout, short enough that a slow click could get the process
+killed before an answer was recorded - the decision is then never persisted
+and every subsequent run re-prompts. That call now uses a 30s timeout (see
+the comment at `podcast_summary.py:357`) precisely so a first-time click has
+time to land; it costs nothing on every run after the first since a granted
+permission responds almost immediately.
+
+To prime the grant manually instead of waiting for a scheduled run to
+trigger it, run the same check launchd would run, from Terminal, while
+you're at the keyboard to click Allow:
+
+```bash
+/opt/homebrew/bin/python3.14 -c '
+import subprocess
+r = subprocess.run(
+    ["osascript", "-e", "tell application \"System Events\" to exists application process \"Podcasts\""],
+    capture_output=True, text=True, timeout=30,
+)
+print(r.returncode, r.stdout.strip(), r.stderr.strip())
+'
+```
+
+`0 true` with no dialog means it is already granted.
