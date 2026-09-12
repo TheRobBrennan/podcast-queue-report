@@ -169,16 +169,18 @@ OS upgrade, the symptom is a permissions error from `podcast_summary.py` in
 `run.log`; grant Full Disk Access to `/bin/zsh` in System Settings ->
 Privacy & Security.
 
-### Discord + open-in-browser, not email or SMS
+### Email + Discord + open-in-browser, not SMS
 
-The agent runs `make cron`: Discord post + opening the HTML report in the
-default browser. As of the 2026.09.12 fix (`d07e16b` /
-[#27](https://github.com/TheRobBrennan/podcast-queue-report/pull/27)), it no
-longer emails - `make cron` used to also send via Outlook's AppleScript,
-which is why older notes here mentioned email. `make all` (which also drags
-in the `sms` target) is never used for the scheduled agent; Messages.app
-automation is noisier to run unattended, so `REPORT_PHONE` stays blank in
-`.env` for this path regardless.
+The agent runs `make cron`: email (Outlook) + Discord post + opening the
+HTML report in the default browser. This went through two changes worth
+knowing about if you're reading history: the 2026.09.12 fix (`d07e16b` /
+[#27](https://github.com/TheRobBrennan/podcast-queue-report/pull/27))
+removed email from `make cron` in favor of just opening the browser, then a
+later change brought email back alongside Discord and the browser open - so
+`make cron` now sends all three every scheduled run. `make all` (which also
+drags in the `sms` target) is still never used for the scheduled agent;
+Messages.app automation is noisier to run unattended, so `REPORT_PHONE`
+stays blank in `.env` for this path regardless.
 
 ### One-time Automation grant for System Events
 
