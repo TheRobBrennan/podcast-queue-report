@@ -50,8 +50,15 @@ else
 
   # Random one-time password for the intermediate .p12 - it's discarded
   # the moment `security import` finishes with it, never stored.
+  #
+  # -legacy: OpenSSL 3.x defaults to AES-256/SHA-256 for PKCS12, which
+  # macOS's `security import` (built on the older Apple CDSA PKCS12
+  # parser) cannot read - it fails with "MAC verification failed during
+  # PKCS12 import (wrong password?)" even with the correct password.
+  # -legacy switches back to the RC2/3DES+SHA-1 encoding Keychain
+  # actually understands.
   P12_PASS="$(openssl rand -base64 24)"
-  openssl pkcs12 -export -out "$TMPDIR/cert.p12" \
+  openssl pkcs12 -export -legacy -out "$TMPDIR/cert.p12" \
     -inkey "$TMPDIR/key.pem" -in "$TMPDIR/cert.pem" \
     -passout "pass:$P12_PASS" 2>/dev/null
 
