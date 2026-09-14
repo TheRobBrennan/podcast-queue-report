@@ -113,6 +113,21 @@ def human_date(d, iso):
     dt_local = dt.astimezone(local_tz(d))
     return dt_local.strftime("%a %b %-d, %-I:%M%p %Z")
 
+def ordinal(n):
+    if 11 <= n % 100 <= 13:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+def human_date_long(d, iso):
+    """Full form for the report footer: "Sunday, September 13th, 2026 @ 8:20pm PDT"."""
+    dt = datetime.datetime.fromisoformat(iso).replace(tzinfo=datetime.timezone.utc)
+    dt_local = dt.astimezone(local_tz(d))
+    day = ordinal(dt_local.day)
+    time_str = dt_local.strftime("%-I:%M%p").lower()
+    return dt_local.strftime(f"%A, %B {day}, %Y @ ") + time_str + dt_local.strftime(" %Z")
+
 def fmt_relative(d, iso):
     """Podcasts.app-style relative age: "13h ago", "1d ago", "Just now".
     Anything older than a week falls back to an absolute date, same as the
@@ -504,7 +519,7 @@ def build_html(d):
     {rows}
   </table>
 
-  <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated {human_date(d, d["generated_at"])}</div>
+  <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated {human_date_long(d, d["generated_at"])}</div>
 </div>
 </body>
 </html>'''
