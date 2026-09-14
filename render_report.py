@@ -497,7 +497,7 @@ def build_html(d):
         oldest_html = "Empty &mdash; you&rsquo;re all caught up!"
 
     emoji_row_html = "".join(
-        f'<span style="display:inline-block;margin:3px 5px;">{e}</span>'
+        f'<span style="display:inline-block;margin:5px 10px;">{e}</span>'
         for e in d["emoji_list"]
     )
 
