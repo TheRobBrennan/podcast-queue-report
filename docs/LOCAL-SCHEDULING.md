@@ -246,22 +246,49 @@ disk never changed.
 
 **Fix:** give `python3.14` a real (self-signed is fine) code signature
 instead of Homebrew's ad-hoc one, so TCC keys the grant to a certificate
-identity instead of a hash of the binary's bytes:
+identity instead of a hash of the binary's bytes.
+
+The certificate itself has to come from **Keychain Access's Certificate
+Assistant wizard**, not a hand-rolled `openssl req`. That was the first
+thing tried here and it failed twice in a row in ways that looked
+successful right up until `codesign` refused it: `security import`
+reported success but `codesign -s <name>` said "no identity found"
+(the cert wasn't yet trusted for code signing), and after explicitly
+trusting it with `security add-trusted-cert`, it *still* said "no
+identity found" - a hand-built cert can fail Apple's codesigning trust
+policy for reasons (missing key-usage bits, a self-signed leaf marked
+`CA:true`, etc.) that are opaque from the CLI side. Keychain Access's own
+wizard is built to avoid exactly this and reliably produces a usable
+identity. One-time setup:
+
+1. Open Keychain Access.
+2. Keychain Access -> Certificate Assistant -> Create a Certificate...
+3. Name it `podcast-report-python-codesign` (or anything - see step 5).
+4. Identity Type: **Self Signed Root**. Certificate Type: **Code Signing**.
+5. Create, then Done. If `codesign` still can't find it afterward, open
+   the cert in Keychain Access, expand "Trust", and set "Code Signing" to
+   "Always Trust" (you may be asked for your password - that's macOS's
+   own trust dialog, not this repo's script).
+
+Then the repeatable part - actually signing the binary - is scripted:
 
 ```bash
 bash scripts/sign_python_for_tcc.sh
 ```
 
-See the script for exactly what it does (creates a local self-signed
-code-signing certificate on first run, reuses it after that, then re-signs
-`python3.14`). After running it, do one `make run` and click Allow one more
-time - that grant should then persist normally.
+(If you named the certificate something other than the default, pass it
+as `CODESIGN_IDENTITY="Your Cert Name" bash scripts/sign_python_for_tcc.sh`.)
+
+After running it, do one `make run` and click Allow one more time - that
+grant should then persist normally.
 
 **This isn't permanent across Python upgrades.** `brew upgrade python@3.14`
 overwrites the binary with Homebrew's ad-hoc-signed one again, silently
 undoing this fix. If the dialog comes back, check `codesign -dv <python3.14
-path>` for `Signature=adhoc` and re-run the script if so - it's idempotent
-and safe to re-run any time.
+path>` for `Signature=adhoc` and re-run `scripts/sign_python_for_tcc.sh` if
+so - the certificate itself is untouched by a Python upgrade, only the
+signature on the binary is lost, so step 1-5 above is only ever needed
+once.
 
 To prime the grant manually instead of waiting for a scheduled run to
 trigger it, run the same check launchd would run, from Terminal, while

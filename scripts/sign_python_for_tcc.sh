@@ -17,10 +17,29 @@
 # from "hash of these bytes" to "signed by this certificate," which is
 # what makes the grant stick.
 #
-# Safe to re-run any time - a `brew upgrade python@3.14` overwrites the
-# binary and wipes this signature, so re-run this script after any such
-# upgrade (`codesign -dv <python3.14 path>` shows `Signature=adhoc` again
-# when that's happened).
+# This script does NOT create the certificate - a hand-rolled openssl
+# cert reliably fails codesign's own trust check in subtle ways (missing
+# key-usage bits, a leaf marked CA:true, etc.), even after
+# `security add-trusted-cert` reports success. Apple's own Certificate
+# Assistant wizard is built for exactly this and doesn't have that
+# problem, so create the identity there ONCE:
+#
+#   1. Open Keychain Access.
+#   2. Menu: Keychain Access -> Certificate Assistant -> Create a Certificate...
+#   3. Name it (this script's default expects "podcast-report-python-codesign",
+#      or set CODESIGN_IDENTITY to whatever you named it).
+#   4. Identity Type: Self Signed Root. Certificate Type: Code Signing.
+#   5. Click Create, then Done. Keychain Access sets up trust correctly
+#      as part of this flow - if it doesn't ask, or codesign still can't
+#      find it, open the new cert in Keychain Access, expand "Trust", and
+#      set "Code Signing" to "Always Trust" (enter your password if asked
+#      - that's macOS's own trust-setting dialog, not this script).
+#
+# This script just does the repeatable part: re-signing the binary with
+# whatever identity you created above. Safe to re-run any time - a
+# `brew upgrade python@3.14` overwrites the binary and wipes its
+# signature, so re-run this after any such upgrade (`codesign -dv
+# <python3.14 path>` shows `Signature=adhoc` again when that's happened).
 set -euo pipefail
 
 CERT_NAME="${CODESIGN_IDENTITY:-podcast-report-python-codesign}"
@@ -35,53 +54,18 @@ PY_BIN="$(readlink -f "$PY_BIN" 2>/dev/null || greadlink -f "$PY_BIN" 2>/dev/nul
 
 echo "Target binary: $PY_BIN"
 
-TMPDIR="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR"' EXIT
-
-if security find-certificate -c "$CERT_NAME" "$KEYCHAIN" &>/dev/null; then
-  echo "Certificate '$CERT_NAME' already exists in $KEYCHAIN - reusing it."
-else
-  echo "Creating self-signed code-signing certificate '$CERT_NAME'..."
-
-  openssl req -x509 -newkey rsa:2048 -keyout "$TMPDIR/key.pem" -out "$TMPDIR/cert.pem" \
-    -days 3650 -nodes -subj "/CN=$CERT_NAME" \
-    -addext "extendedKeyUsage=codeSigning" \
-    -addext "basicConstraints=critical,CA:true" \
-    2>/dev/null
-
-  # Random one-time password for the intermediate .p12 - it's discarded
-  # the moment `security import` finishes with it, never stored.
-  #
-  # -legacy: OpenSSL 3.x defaults to AES-256/SHA-256 for PKCS12, which
-  # macOS's `security import` (built on the older Apple CDSA PKCS12
-  # parser) cannot read - it fails with "MAC verification failed during
-  # PKCS12 import (wrong password?)" even with the correct password.
-  # -legacy switches back to the RC2/3DES+SHA-1 encoding Keychain
-  # actually understands.
-  P12_PASS="$(openssl rand -base64 24)"
-  openssl pkcs12 -export -legacy -out "$TMPDIR/cert.p12" \
-    -inkey "$TMPDIR/key.pem" -in "$TMPDIR/cert.pem" \
-    -passout "pass:$P12_PASS" 2>/dev/null
-
-  # -T /usr/bin/codesign pre-authorizes codesign to use this key without
-  # a "keychain wants to use a key" prompt on every future sign.
-  security import "$TMPDIR/cert.p12" -k "$KEYCHAIN" -P "$P12_PASS" \
-    -T /usr/bin/codesign -T /usr/bin/security
-
-  echo "Certificate created and imported into $KEYCHAIN."
-fi
-
-# A freshly-imported self-signed cert sits in the keychain but isn't yet
-# *trusted* for code signing - codesign only picks identities that pass
-# code-signing trust evaluation (`security find-identity -p codesigning`),
-# so `codesign -s "$CERT_NAME"` fails with "no identity found" until this
-# runs. This is a keychain trust setting, not a system trust root - it
-# does not require sudo or an admin password, though macOS may show a
-# one-time confirmation dialog; click Always Allow/Trust if so.
 if ! security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "$CERT_NAME"; then
-  echo "Trusting '$CERT_NAME' for code signing..."
-  security find-certificate -c "$CERT_NAME" -p "$KEYCHAIN" > "$TMPDIR/existing_cert.pem"
-  security add-trusted-cert -p codeSign -k "$KEYCHAIN" "$TMPDIR/existing_cert.pem"
+  cat >&2 <<EOF
+
+FAIL: no valid code-signing identity named '$CERT_NAME' found in $KEYCHAIN.
+
+Create it once via Keychain Access (see the comment block at the top of
+this script for the exact steps), then re-run this script. If you named
+it something other than '$CERT_NAME', set CODESIGN_IDENTITY:
+
+  CODESIGN_IDENTITY="Your Cert Name" bash scripts/sign_python_for_tcc.sh
+EOF
+  exit 1
 fi
 
 echo "Re-signing $PY_BIN ..."
