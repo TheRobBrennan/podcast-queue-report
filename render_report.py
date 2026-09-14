@@ -17,6 +17,13 @@ def now_playing_badge(margin_left=0):
             f'font-weight:700;letter-spacing:0.5px;border-radius:4px;padding:1px 6px;{margin}'
             'vertical-align:middle;">\u25cf NOW PLAYING</span>')
 
+def generated_pill(d):
+    """The "\U0001f552 Generated ..." pill - shared by the header and footer so
+    both stamps always agree on styling as well as timestamp."""
+    return ('<span style="display:inline-block;background:#f1f5f9;color:#64748b;font-size:11px;'
+            'font-weight:600;letter-spacing:0.3px;border-radius:20px;padding:5px 14px;">'
+            f'\U0001f552 Generated {human_date_long(d, d["generated_at"])}</span>')
+
 def _matches_now_playing(np, ep):
     """True if `ep` (a queue episode dict) is the same episode as `np`
     (the now_playing dict). Prefer matching by episode_url (stable
@@ -500,7 +507,7 @@ def build_html(d):
   <div style="font-size:28px;letter-spacing:2px;text-align:center;margin-bottom:8px;line-height:1.4;">{d["emoji_header"]}</div>
   <div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:12px;">{headline(q)} &mdash; <span style="white-space:nowrap;">Grade: <span style="display:inline-block;background:{grade_color};color:{grade_text};border-radius:8px;padding:2px 12px;font-weight:700;">{q["grade"]}</span> 🎧</span></div>
   <div style="text-align:center;margin-bottom:32px;">
-    <span style="display:inline-block;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:600;letter-spacing:0.3px;border-radius:20px;padding:5px 14px;">🕒 Generated {human_date_long(d, d["generated_at"])}</span>
+    {generated_pill(d)}
   </div>
 
   {duplicates_html}
@@ -527,7 +534,7 @@ def build_html(d):
     {rows}
   </table>
 
-  <div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:32px;">Generated {human_date_long(d, d["generated_at"])}</div>
+  <div style="text-align:center;margin-top:32px;">{generated_pill(d)}</div>
 </div>
 </body>
 </html>'''
