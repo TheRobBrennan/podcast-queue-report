@@ -257,3 +257,16 @@ after the lid opens. See **[docs/LOCAL-SCHEDULING.md](docs/LOCAL-SCHEDULING.md)*
   Column names, value semantics, and even table structure could differ on
   other setups (different macOS/Podcasts versions, iCloud sync state,
   library size, etc.).
+- **The `NOW PLAYING` episode artwork renders correctly in Apple Mail but
+  looked cramped/oddly-scaled in Outlook for Mac** (observed 2026-09-14).
+  The HTML is standards-correct - the source artwork is a clean 300x300
+  square, and it measures out as a clean, undistorted 48x48 box in a
+  Chromium render (verified with `getBoundingClientRect`), and it renders
+  fine in Apple Mail on the same machine. Only Outlook for Mac's own HTML
+  rendering shows the problem. Since `make email` sends through Outlook
+  (see "Delivery" above), this is the client Rob actually reads the report
+  in day to day. Not fixed - if you pick this back up, don't assume it's
+  a CSS spacing/gap issue (that was tried and ruled out); get an actual
+  Outlook-vs-Apple-Mail side-by-side screenshot first before changing
+  anything, since headless Chrome cannot reproduce Outlook's renderer at
+  all.

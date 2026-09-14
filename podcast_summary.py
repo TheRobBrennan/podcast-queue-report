@@ -866,6 +866,7 @@ def main():
         ],
         "now_playing": get_now_playing(cur),
         "emoji_header": emoji_header(),
+        "emoji_list": EMOJI_POOL,
         "config": {
             "email": REPORT_EMAIL,
             "phone": REPORT_PHONE,
