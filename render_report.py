@@ -496,6 +496,8 @@ def build_html(d):
     else:
         oldest_html = "Empty &mdash; you&rsquo;re all caught up!"
 
+    emoji_row_html = "".join(f"<span>{e}</span>" for e in d["emoji_list"])
+
     return f'''<!DOCTYPE html>
 <html>
 <head>
@@ -504,7 +506,7 @@ def build_html(d):
 </head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;margin:0;padding:32px;color:#1e293b;">
 <div style="max-width:720px;margin:0 auto;">
-  <div style="font-size:28px;letter-spacing:2px;text-align:center;margin-bottom:8px;line-height:1.4;">{d["emoji_header"]}</div>
+  <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px 8px;font-size:28px;line-height:1;margin-bottom:16px;">{emoji_row_html}</div>
   <div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:12px;">{headline(q)} &mdash; <span style="white-space:nowrap;">Grade: <span style="display:inline-block;background:{grade_color};color:{grade_text};border-radius:8px;padding:2px 12px;font-weight:700;">{q["grade"]}</span> 🎧</span></div>
   <div style="text-align:center;margin-bottom:32px;">
     {generated_pill(d)}
