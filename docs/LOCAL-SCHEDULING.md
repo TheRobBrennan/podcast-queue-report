@@ -189,9 +189,9 @@ an unplayed-queue undercount - see `CLAUDE.md`) shells out to `osascript` on
 **every** report run to ask System Events whether Podcasts.app is running,
 and if so to click its "Refresh Feeds" menu item. That is a distinct Apple
 Events target from anything else in this repo, so the first time it ever
-runs, macOS raises an Automation permission dialog - "`python3.14` would
-like to access data from other apps" - separate from (and unrelated to) any
-permission ever granted to `osascript` for Outlook/Mail.
+runs, macOS raises an Automation permission dialog asking to control System
+Events, separate from (and unrelated to) any permission ever granted to
+`osascript` for Outlook/Mail.
 
 This is a one-time, per-binary OS grant, not a per-run one. Click Allow and
 it persists in System Settings -> Privacy & Security -> Automation, listed
@@ -207,6 +207,61 @@ and every subsequent run re-prompts. That call now uses a 30s timeout (see
 the comment at `podcast_summary.py:357`) precisely so a first-time click has
 time to land; it costs nothing on every run after the first since a granted
 permission responds almost immediately.
+
+**This section previously (incorrectly) attributed the dialog text
+`"python3.14" would like to access data from other apps` to this Automation
+grant. It doesn't belong here - see the next section, which is the dialog
+that text actually belongs to and the one that kept recurring after this
+fix shipped.**
+
+### The recurring "access data from other apps" dialog (2026-09-13)
+
+The Sep 12 fix above did **not** stop the periodic re-prompting Rob kept
+hitting - because it was fixing a different dialog than the one actually
+recurring. The one that kept coming back reads exactly:
+
+> "python3.14" would like to access data from other apps.
+
+with a folder-and-hand icon - that's macOS's `kTCCServiceSystemPolicyAppData`
+protection ("App Data" in some tooling), not Automation. It's triggered by
+`podcast_summary.py` connecting directly to Podcasts.app's private database
+at `~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/MTLibrary.sqlite`
+(see `_resolve_db_path()`) - a raw file read into another app's container,
+which is exactly what this TCC service guards, distinct from both Full Disk
+Access (`kTCCServiceSystemPolicyAllFiles` - confirmed empty on this Mac; not
+what's granting this) and the Automation grant above.
+
+**Root cause, confirmed by direct reproduction:** `codesign -dv` on
+`python3.14` shows `Signature=adhoc`, `TeamIdentifier=not set` - Homebrew
+ships it ad-hoc signed, with no stable Team ID. Every other app on this
+Mac holding a *stable* (non-repeating) grant for this same TCC service -
+Claude Code, VS Code, Terminal, Codex - is properly Developer-ID signed.
+Live test on 2026-09-13: force-triggered the launchd agent
+(`launchctl kickstart -k`), Rob clicked Allow, then the agent was
+immediately force-triggered again - and the identical dialog reappeared
+seconds later, for the exact same unchanged binary. That rules out "it just
+needed one more click"; macOS is not persisting the grant for an ad-hoc
+signed executable across separate process launches, even though the file on
+disk never changed.
+
+**Fix:** give `python3.14` a real (self-signed is fine) code signature
+instead of Homebrew's ad-hoc one, so TCC keys the grant to a certificate
+identity instead of a hash of the binary's bytes:
+
+```bash
+bash scripts/sign_python_for_tcc.sh
+```
+
+See the script for exactly what it does (creates a local self-signed
+code-signing certificate on first run, reuses it after that, then re-signs
+`python3.14`). After running it, do one `make run` and click Allow one more
+time - that grant should then persist normally.
+
+**This isn't permanent across Python upgrades.** `brew upgrade python@3.14`
+overwrites the binary with Homebrew's ad-hoc-signed one again, silently
+undoing this fix. If the dialog comes back, check `codesign -dv <python3.14
+path>` for `Signature=adhoc` and re-run the script if so - it's idempotent
+and safe to re-run any time.
 
 To prime the grant manually instead of waiting for a scheduled run to
 trigger it, run the same check launchd would run, from Terminal, while
