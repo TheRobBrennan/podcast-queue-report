@@ -61,18 +61,38 @@ minimal built-in `.env` loader. Nothing to `pip install`.
 - **Never commit directly to `main`.** Branch off `main`, open a PR when
   ready.
 - **Include a screenshot in the PR for any visible-output change** (chat/
-  terminal, HTML, email, SMS, Discord). Generate it headlessly - don't rely
-  on the interactive Simulator/screen-recording permission:
+  terminal, HTML, email, SMS, Discord) - **every time, no exceptions, even
+  for a change that looks small or purely cosmetic.** This got skipped on
+  PRs #32 and #33 (2026-09-13) despite being written down right here -
+  before running `gh pr create` or `gh pr edit` on any PR touching
+  `render_report.py`'s output, stop and confirm a screenshot is attached.
+  Generate it headlessly - don't rely on the interactive
+  Simulator/screen-recording permission:
+  - **Always regenerate against live data first** (`make run` / `make html`
+    / `make all` - a fresh query against the real Podcasts DB), never
+    screenshot a stale `reports/podcast_report.html`, a cached
+    `/tmp/podcast_run.json` from an earlier run, or a copy made for
+    Claude's own preview - the screenshot must reflect what a real run
+    produces right now.
   - HTML/email: `make html`, then screenshot the file with headless Chrome,
     e.g. `google-chrome --headless --disable-gpu --screenshot=out.png
-    --window-size=900,2400 file:///path/to/reports/podcast_report.html`.
+    --window-size=900,2400 file:///path/to/reports/podcast_report.html`
+    (on macOS with no `google-chrome` on PATH, use
+    `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` instead).
   - Chat/terminal/SMS: capture the text output (`make chat` etc.), wrap it
     in a small dark-background/monospace HTML page, then screenshot that
     the same way - there's no real terminal window to capture headlessly.
-  Save the PNG under `assets/`, commit it on the PR branch, and embed it in
-  the PR body via the raw GitHub URL (`https://raw.githubusercontent.com/
+  - For a change to an existing visual element, capture **both** a before
+    (render the pre-change code - `git show main:render_report.py` into a
+    scratch copy - against the same live data) and an after screenshot, so
+    the PR shows the actual difference rather than just the end state.
+  Save the PNG(s) under `assets/`, commit them on the PR branch, and embed
+  them in the PR body via the raw GitHub URL (`https://raw.githubusercontent.com/
   TheRobBrennan/podcast-queue-report/<branch>/assets/<file>.png`) - a
   relative path or `../blob/...` link does not resolve in a PR body.
+  **Then show Rob the real thing** (open the live report, or send the
+  screenshot) before treating the PR as done - a screenshot Claude looked at
+  itself is not the same as Rob having seen it.
 - This repo's working copy sometimes lives on a FUSE-backed mount that
   allows renames but rejects deletes, which leaves stale
   `.git/index.lock`/`tmp_obj_*` files behind and makes plain `git` commands

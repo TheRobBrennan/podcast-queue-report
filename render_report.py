@@ -10,6 +10,13 @@ PLAYED_LABELS = [
 ]
 
 
+def now_playing_badge(margin_left=0):
+    """The green "\u25cf NOW PLAYING" pill - shared by the queue row and the header banner."""
+    margin = f"margin-left:{margin_left}px;" if margin_left else ""
+    return ('<span style="display:inline-block;background:#d1fae5;color:#047857;font-size:10px;'
+            f'font-weight:700;letter-spacing:0.5px;border-radius:4px;padding:1px 6px;{margin}'
+            'vertical-align:middle;">\u25cf NOW PLAYING</span>')
+
 def _matches_now_playing(np, ep):
     """True if `ep` (a queue episode dict) is the same episode as `np`
     (the now_playing dict). Prefer matching by episode_url (stable
@@ -417,7 +424,7 @@ def build_html(d):
         pub = datetime.datetime.fromisoformat(e["pubdate"]).replace(tzinfo=datetime.timezone.utc).astimezone(local_tz(d))
         is_playing = _is_now_playing(e)
         if is_playing:
-            badge = ' <span style="display:inline-block;background:#d1fae5;color:#047857;font-size:10px;font-weight:700;letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;">● NOW PLAYING</span>'
+            badge = ' ' + now_playing_badge(margin_left=6)
         elif _is_up_next(e):
             badge = ' <span style="display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;">▶ UP NEXT</span>'
         else:
@@ -466,12 +473,10 @@ def build_html(d):
             '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;'
             'padding:14px 20px;margin-bottom:32px;display:flex;align-items:center;gap:14px;">'
             + now_playing_artwork +
-            '<div><span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
-            'background:#10b981;margin-right:10px;">&nbsp;</span>'
-            f'<span style="font-size:14px;color:#065f46;">&#9654;&#65039; '
-            f'<b style="color:#064e3b;">Now playing:</b> {title_html}'
+            f'<div>{now_playing_badge()}'
+            f'<div style="font-size:14px;color:#065f46;margin-top:6px;">{title_html}'
             + (f' &mdash; {podcast_html}' if podcast_html else "")
-            + f' ({np["remaining_fmt"]} left)</span></div></div>'
+            + f' ({np["remaining_fmt"]} left)</div></div></div>'
         )
     else:
         now_playing_html = ""
