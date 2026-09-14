@@ -413,7 +413,16 @@ def build_html(d):
         pod_html = html.escape(e["podcast"])
         if e.get("podcast_url"):
             pod_html = f'<a href="{html.escape(e["podcast_url"])}" target="_blank" style="color:#64748b;text-decoration:none;">{pod_html}</a>'
-        row_bg = "background:#f8fafc;" if (is_playing or _is_up_next(e)) else ""
+        # Faint tint matches each row's own badge family - green for Now
+        # Playing (same #ecfdf5 as the hero card above), blue for Up Next
+        # (same family as the ▶ UP NEXT badge) - instead of both sharing one
+        # neutral gray that gave no visual cue which row was which.
+        if is_playing:
+            row_bg = "background:#ecfdf5;"
+        elif _is_up_next(e):
+            row_bg = "background:#eff6ff;"
+        else:
+            row_bg = ""
         remaining_html = (
             f'<div style="color:#2563eb;font-size:12px;margin-top:2px;">{e["remaining_fmt"]} left</div>'
             if e.get("in_progress") and e.get("remaining_fmt") else ""
