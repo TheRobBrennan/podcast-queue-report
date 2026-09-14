@@ -35,12 +35,13 @@ PY_BIN="$(readlink -f "$PY_BIN" 2>/dev/null || greadlink -f "$PY_BIN" 2>/dev/nul
 
 echo "Target binary: $PY_BIN"
 
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+
 if security find-certificate -c "$CERT_NAME" "$KEYCHAIN" &>/dev/null; then
   echo "Certificate '$CERT_NAME' already exists in $KEYCHAIN - reusing it."
 else
   echo "Creating self-signed code-signing certificate '$CERT_NAME'..."
-  TMPDIR="$(mktemp -d)"
-  trap 'rm -rf "$TMPDIR"' EXIT
 
   openssl req -x509 -newkey rsa:2048 -keyout "$TMPDIR/key.pem" -out "$TMPDIR/cert.pem" \
     -days 3650 -nodes -subj "/CN=$CERT_NAME" \
@@ -68,8 +69,19 @@ else
     -T /usr/bin/codesign -T /usr/bin/security
 
   echo "Certificate created and imported into $KEYCHAIN."
-  echo "(Not added to system trust roots - codesign doesn't need that,"
-  echo " only TCC's own identity check, which this satisfies.)"
+fi
+
+# A freshly-imported self-signed cert sits in the keychain but isn't yet
+# *trusted* for code signing - codesign only picks identities that pass
+# code-signing trust evaluation (`security find-identity -p codesigning`),
+# so `codesign -s "$CERT_NAME"` fails with "no identity found" until this
+# runs. This is a keychain trust setting, not a system trust root - it
+# does not require sudo or an admin password, though macOS may show a
+# one-time confirmation dialog; click Always Allow/Trust if so.
+if ! security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null | grep -q "$CERT_NAME"; then
+  echo "Trusting '$CERT_NAME' for code signing..."
+  security find-certificate -c "$CERT_NAME" -p "$KEYCHAIN" > "$TMPDIR/existing_cert.pem"
+  security add-trusted-cert -p codeSign -k "$KEYCHAIN" "$TMPDIR/existing_cert.pem"
 fi
 
 echo "Re-signing $PY_BIN ..."
