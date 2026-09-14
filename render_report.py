@@ -498,7 +498,10 @@ def build_html(d):
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;margin:0;padding:32px;color:#1e293b;">
 <div style="max-width:720px;margin:0 auto;">
   <div style="font-size:28px;letter-spacing:2px;text-align:center;margin-bottom:8px;line-height:1.4;">{d["emoji_header"]}</div>
-  <div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:36px;">{headline(q)} &mdash; <span style="white-space:nowrap;">Grade: <span style="display:inline-block;background:{grade_color};color:{grade_text};border-radius:8px;padding:2px 12px;font-weight:700;">{q["grade"]}</span> 🎧</span></div>
+  <div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:12px;">{headline(q)} &mdash; <span style="white-space:nowrap;">Grade: <span style="display:inline-block;background:{grade_color};color:{grade_text};border-radius:8px;padding:2px 12px;font-weight:700;">{q["grade"]}</span> 🎧</span></div>
+  <div style="text-align:center;margin-bottom:32px;">
+    <span style="display:inline-block;background:#f1f5f9;color:#64748b;font-size:11px;font-weight:600;letter-spacing:0.3px;border-radius:20px;padding:5px 14px;">🕒 Generated {human_date_long(d, d["generated_at"])}</span>
+  </div>
 
   {duplicates_html}
 
