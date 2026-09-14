@@ -162,12 +162,15 @@ Two rules follow:
 
 ### Full Disk Access
 
-Reading the Apple Podcasts database from a launchd agent requires Full Disk
-Access for the executing binary. This is already working on this machine
-(verified 2026-09-04 via a `DRY_RUN=1` kickstart). If it ever breaks after an
-OS upgrade, the symptom is a permissions error from `podcast_summary.py` in
-`run.log`; grant Full Disk Access to `/bin/zsh` in System Settings ->
-Privacy & Security.
+**python3.14 needs Full Disk Access, added manually in System Settings ->
+Privacy & Security -> Full Disk Access.** This section previously claimed
+this was "already working" via `/bin/zsh` - that was wrong; see the next
+section for how that was discovered and fixed for real on 2026-09-13. If it
+ever breaks after an OS upgrade or a Python reinstall, the symptom is either
+a permissions error from `podcast_summary.py` in `run.log`, or (more often
+for this specific path) a run that just hangs at "Catching up on your
+queue..." for minutes with nothing further logged - re-check the toggle is
+still on for `python3.14`'s exact path under Full Disk Access.
 
 ### Email + Discord + open-in-browser, not SMS
 
@@ -189,9 +192,9 @@ an unplayed-queue undercount - see `CLAUDE.md`) shells out to `osascript` on
 **every** report run to ask System Events whether Podcasts.app is running,
 and if so to click its "Refresh Feeds" menu item. That is a distinct Apple
 Events target from anything else in this repo, so the first time it ever
-runs, macOS raises an Automation permission dialog - "`python3.14` would
-like to access data from other apps" - separate from (and unrelated to) any
-permission ever granted to `osascript` for Outlook/Mail.
+runs, macOS raises an Automation permission dialog asking to control System
+Events, separate from (and unrelated to) any permission ever granted to
+`osascript` for Outlook/Mail.
 
 This is a one-time, per-binary OS grant, not a per-run one. Click Allow and
 it persists in System Settings -> Privacy & Security -> Automation, listed
@@ -207,6 +210,71 @@ and every subsequent run re-prompts. That call now uses a 30s timeout (see
 the comment at `podcast_summary.py:357`) precisely so a first-time click has
 time to land; it costs nothing on every run after the first since a granted
 permission responds almost immediately.
+
+**This section previously (incorrectly) attributed the dialog text
+`"python3.14" would like to access data from other apps` to this Automation
+grant. It doesn't belong here - see the next section, which is the dialog
+that text actually belongs to and the one that kept recurring after this
+fix shipped.**
+
+### The recurring "access data from other apps" dialog (2026-09-13)
+
+The Sep 12 fix above did **not** stop the periodic re-prompting Rob kept
+hitting - because it was fixing a different dialog than the one actually
+recurring. The one that kept coming back reads exactly:
+
+> "python3.14" would like to access data from other apps.
+
+with a folder-and-hand icon - that's macOS's `kTCCServiceSystemPolicyAppData`
+protection ("App Data" in some tooling), not Automation. It's triggered by
+`podcast_summary.py` connecting directly to Podcasts.app's private database
+at `~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/MTLibrary.sqlite`
+(see `_resolve_db_path()`) - a raw file read into another app's container,
+which is exactly what this TCC service guards.
+
+**First theory (wrong): ad-hoc code signature.** Homebrew ships `python3.14`
+ad-hoc signed (`codesign -dv` showed `Signature=adhoc`, `TeamIdentifier=not
+set`), and every other app on the Mac with a *stable* grant for this TCC
+service (Claude Code, VS Code, Terminal, Codex) is properly Developer-ID
+signed - a reasonable-looking correlation that turned out not to be
+causal. Re-signing `python3.14` with a real self-signed certificate (via
+Keychain Access's Certificate Assistant - a hand-rolled `openssl req` cert
+failed `codesign`'s own trust check twice in a row, in ways that looked
+successful right up until "no identity found") did **not** fix it: two
+more back-to-back `launchctl kickstart -k` runs after re-signing, each a
+separate process launch, each needed its own fresh Allow click.
+
+**Actual root cause:** per a [reported GitHub issue](https://github.com/stablyai/orca/issues/8381)
+describing the identical symptom for an unrelated tool, `kTCCServiceSystemPolicyAppData`
+grants are stored keyed to `session_pid` and `session_boot_UUID` - the
+*process ID of whichever run asked* - not to a stable code identity at all.
+Every new process launch is, by definition, a new PID, so **this permission
+is architecturally incapable of persisting across separate short-lived CLI
+invocations, signed or not.** The long-running GUI apps that appeared to
+hold "stable" grants (Claude Code, VS Code, Terminal) aren't actually proof
+that signing matters here - they just don't relaunch as a fresh process on
+every operation the way a scheduled CLI script does, so their prompt only
+ever happens once per app *launch*, which for a GUI app is rare.
+
+**Real fix: Full Disk Access**, a separate, stable, path-based grant
+(`kTCCServiceSystemPolicyAllFiles`) that supersedes this session-scoped
+check entirely - confirmed empty for `python3.14` before this fix. Added
+manually (this is a System Settings toggle, not something scriptable):
+
+1. System Settings -> Privacy & Security -> **Full Disk Access**.
+2. Click **+**, `Cmd+Shift+G`, paste the real path:
+   `/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/bin/python3.14`
+3. Add it, confirm the toggle is on.
+
+Verified with three back-to-back `launchctl kickstart -k` runs immediately
+after enabling it - each completed in ~24s with no dialog, versus every
+prior test (ad-hoc *and* signed) hanging for minutes waiting on a click.
+
+The code-signing work above (`scripts/sign_python_for_tcc.sh`, the
+Keychain Access certificate) is harmless but was **not the fix** - it's
+left in place since a real signature doesn't hurt anything and the
+Automation grant (previous section) genuinely does benefit from code
+identity stability, just not this one.
 
 To prime the grant manually instead of waiting for a scheduled run to
 trigger it, run the same check launchd would run, from Terminal, while
