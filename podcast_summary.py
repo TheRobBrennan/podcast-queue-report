@@ -671,9 +671,22 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
             # window shows, even multiple from the same podcast.
             fresh.append(entry)
 
-    queue = started + fresh
-    queue.sort(key=lambda e: e["pubdate"], reverse=True)
-    return queue
+    # Started episodes are ordered by recency of listening (most
+    # recently touched first), not publish date - the same reasoning
+    # item 11 above already applies to whether a started episode is
+    # included at all. Without this, two started episodes sharing the
+    # same publish date (a real case: two shows both publishing at
+    # 07:00 UTC) fall back to arbitrary SQL row order instead of which
+    # one was actually played more recently, silently disagreeing with
+    # Apple's own view, which pins the most recently interacted episode
+    # to the top regardless of publish date. Caught 2026-09-16: a
+    # MrBallen episode marked unplayed and resumed near its end at
+    # 16:00 was reported below a Morbid episode last touched at 14:58,
+    # even though both had the identical 07:00 publish date and Rob's
+    # own Latest Episodes view correctly showed MrBallen on top.
+    started.sort(key=lambda e: e["last_played"], reverse=True)
+    fresh.sort(key=lambda e: e["pubdate"], reverse=True)
+    return started + fresh
 
 def get_duplicate_episodes(queue):
     """Groups queue episodes by exact title match (whitespace/case

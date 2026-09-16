@@ -349,6 +349,34 @@ class GetUnplayedQueueTests(unittest.TestCase):
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
         self.assertEqual([e["title"] for e in queue], ["newer", "older"])
 
+    def test_started_episodes_ordered_by_recency_of_play_not_pubdate(self):
+        """Regression for the 2026-09-16 bug: two started episodes with the
+        identical publish date must order by which one was played more
+        recently, not by arbitrary SQL row order. Previously the final
+         silently discarded the started-first
+        grouping and, on a pubdate tie, fell back to whatever order the
+        rows happened to come back in - so a MrBallen episode marked
+        unplayed and resumed near its end at 16:00 was reported below a
+        Morbid episode last touched at 14:58, even though both shared the
+        same publish date and Apple's own Latest Episodes view correctly
+        pinned the more-recently-played MrBallen episode on top."""
+        pub = self.now - datetime.timedelta(days=2)
+        pod_a = self.fx.podcast("Morbid")
+        pod_b = self.fx.podcast("MrBallen")
+        self.fx.episode(
+            pod_a, "The Disappearance of Daniel Robinson", pub,
+            playhead=186, playstate=1, last_played=self.now - datetime.timedelta(hours=2),
+        )
+        self.fx.episode(
+            pod_b, "Human Resources", pub,
+            playhead=1942, playstate=1, last_played=self.now - datetime.timedelta(hours=1),
+        )
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        self.assertEqual(
+            [e["title"] for e in queue],
+            ["Human Resources", "The Disappearance of Daniel Robinson"],
+        )
+
 
 class GetDuplicateEpisodesTests(unittest.TestCase):
     def _entry(self, title, pubdate, podcast="Some Show"):
