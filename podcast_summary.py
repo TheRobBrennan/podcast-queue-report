@@ -648,8 +648,26 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
         # 2026-09-10. Recency-of-listening is the fix for both: an
         # episode actively being worked through stays regardless of how
         # old its publish date is; one abandoned for weeks does not.
+        #
+        # 13. Requiring active_recency_cd unconditionally on a started
+        #     episode (the fix above) was itself too strict - caught
+        #     2026-09-21. "REVISITED: The Boys" (Park Predators, published
+        #     2026-09-17, last touched 2026-09-19 04:05 - about 64 hours
+        #     before this run) was plainly still sitting in Rob's own
+        #     Latest Episodes view with a partial progress bar, but this
+        #     report dropped it (54 vs the real 55) because 64 hours is
+        #     past ACTIVE_RECENCY_HOURS (48). Unlike item 11's dormant
+        #     four (last touched 5-26 months ago, published just as long
+        #     ago), this episode's publish date was still comfortably
+        #     inside window_days - the recency check just never gave it
+        #     that chance to qualify the normal way. A started episode
+        #     now stays if EITHER bound passes - recently touched, or
+        #     still within the publish-date window like a never-started
+        #     episode - and only drops out when it fails both.
         if is_started:
-            if not last_played or last_played < active_recency_cd:
+            within_window = pub >= window_cd
+            within_active_recency = last_played and last_played >= active_recency_cd
+            if not within_window and not within_active_recency:
                 continue
         elif pub < window_cd:
             continue
