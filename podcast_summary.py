@@ -204,9 +204,10 @@ def _now_playing_from_nowplaying_cli(cur, info):
     podcast_url = None
     artwork = None
     cur.execute(
-        "select e.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID, e.ZPLAYHEAD, e.ZDURATION, "
+        "select e.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID, e.ZPLAYHEAD, m.ZDURATION, "
         "p.ZARTWORKTEMPLATEURL "
         "from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK "
+        "left join ZMTMEDIAENCLOSURE m on m.Z_PK = e.ZCURRENTMEDIAENCLOSURE "
         "where p.ZTITLE = ? and e.ZPLAYSTATE = 1 limit 1",
         (podcast,),
     )
@@ -256,8 +257,9 @@ def _now_playing_from_playstate(cur):
     episodes."""
     cur.execute(
         "select e.ZTITLE, p.ZTITLE, p.ZSTORECLEANURL, e.ZSTORETRACKID, "
-        "e.ZPLAYHEAD, e.ZDURATION, p.ZARTWORKTEMPLATEURL "
+        "e.ZPLAYHEAD, m.ZDURATION, p.ZARTWORKTEMPLATEURL "
         "from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK "
+        "left join ZMTMEDIAENCLOSURE m on m.Z_PK = e.ZCURRENTMEDIAENCLOSURE "
         "where e.ZPLAYSTATE = 1 order by e.ZLASTDATEPLAYED desc limit 1"
     )
     row = cur.fetchone()
@@ -586,11 +588,13 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     stuck_asset_cutoff_cd = dt_to_cd(now_dt - datetime.timedelta(hours=STUCK_ASSET_GRACE_HOURS))
     active_recency_cd = dt_to_cd(now_dt - datetime.timedelta(hours=ACTIVE_RECENCY_HOURS))
     cur.execute('''
-        select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
+        select e.ZTITLE, p.ZTITLE, m.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
-               e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, e.ZITEMDESCRIPTION,
-               e.ZASSETURL, e.ZBYTESIZE, e.ZUNPLAYEDTAB
+               e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, coalesce(d.ZPLAINTEXT, d.ZTEXT),
+               m.ZREMOTEURL, e.ZBYTESIZE, e.ZUNPLAYEDTAB
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
+        left join ZMTMEDIAENCLOSURE m on m.Z_PK = e.ZCURRENTMEDIAENCLOSURE
+        left join ZMTEPISODEDESCRIPTION d on d.Z_PK = e.ZDESCRIPTIONOBJECT
         where p.ZSUBSCRIBED=1 and e.ZPUBDATE <= ?
           and e.ZENTITLEMENTSTATE=0 and (e.ZUNPLAYEDTAB=1 or e.ZBACKCATALOG=1)
         order by e.ZPUBDATE desc
@@ -754,8 +758,9 @@ def get_played_stats(cur, since_dt, until_dt):
     since_cd = dt_to_cd(since_dt)
     until_cd = dt_to_cd(until_dt)
     cur.execute('''
-        select e.ZTITLE, p.ZTITLE, e.ZDURATION, e.ZLASTDATEPLAYED
+        select e.ZTITLE, p.ZTITLE, m.ZDURATION, e.ZLASTDATEPLAYED
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
+        left join ZMTMEDIAENCLOSURE m on m.Z_PK = e.ZCURRENTMEDIAENCLOSURE
         where p.ZSUBSCRIBED=1 and e.ZLASTDATEPLAYED >= ? and e.ZLASTDATEPLAYED < ?
           and coalesce(e.ZUNPLAYEDTAB, 0) != 1
         order by e.ZLASTDATEPLAYED desc
