@@ -46,18 +46,35 @@ def make_db():
             Z_PK integer primary key,
             ZPODCAST integer,
             ZTITLE text,
-            ZDURATION real,
             ZPUBDATE real,
             ZPLAYHEAD real,
             ZSTORETRACKID integer,
             ZPLAYSTATE integer,
             ZLASTDATEPLAYED real,
             ZENTITLEMENTSTATE integer,
-            ZITEMDESCRIPTION text,
-            ZASSETURL text,
             ZBYTESIZE integer,
             ZUNPLAYEDTAB integer,
-            ZBACKCATALOG integer
+            ZBACKCATALOG integer,
+            ZCURRENTMEDIAENCLOSURE integer,
+            ZDESCRIPTIONOBJECT integer
+        )
+    """)
+    # macOS 27 moved duration/asset URL and the description text off
+    # ZMTEPISODE into these two tables.
+    con.execute("""
+        create table ZMTMEDIAENCLOSURE (
+            Z_PK integer primary key,
+            ZEPISODE integer,
+            ZDURATION real,
+            ZREMOTEURL text
+        )
+    """)
+    con.execute("""
+        create table ZMTEPISODEDESCRIPTION (
+            Z_PK integer primary key,
+            ZEPISODE integer,
+            ZPLAINTEXT text,
+            ZTEXT text
         )
     """)
     return con
@@ -99,13 +116,21 @@ class QueueFixture:
         track_id = self._next_track_id
         self._next_track_id += 1
         self.cur.execute(
-            "insert into ZMTEPISODE (Z_PK, ZPODCAST, ZTITLE, ZDURATION, ZPUBDATE, ZPLAYHEAD, "
-            "ZSTORETRACKID, ZPLAYSTATE, ZLASTDATEPLAYED, ZENTITLEMENTSTATE, ZITEMDESCRIPTION, "
-            "ZASSETURL, ZBYTESIZE, ZUNPLAYEDTAB, ZBACKCATALOG) "
-            "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (pk, podcast_pk, title, duration, ps.dt_to_cd(pubdate), playhead, track_id,
+            "insert into ZMTEPISODE (Z_PK, ZPODCAST, ZTITLE, ZPUBDATE, ZPLAYHEAD, "
+            "ZSTORETRACKID, ZPLAYSTATE, ZLASTDATEPLAYED, ZENTITLEMENTSTATE, "
+            "ZBYTESIZE, ZUNPLAYEDTAB, ZBACKCATALOG, ZCURRENTMEDIAENCLOSURE, ZDESCRIPTIONOBJECT) "
+            "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (pk, podcast_pk, title, ps.dt_to_cd(pubdate), playhead, track_id,
              playstate, ps.dt_to_cd(last_played) if last_played else None,
-             entitlement, description, asset_url, byte_size, unplayedtab, backcatalog),
+             entitlement, byte_size, unplayedtab, backcatalog, pk, pk),
+        )
+        self.cur.execute(
+            "insert into ZMTMEDIAENCLOSURE (Z_PK, ZEPISODE, ZDURATION, ZREMOTEURL) values (?, ?, ?, ?)",
+            (pk, pk, duration, asset_url),
+        )
+        self.cur.execute(
+            "insert into ZMTEPISODEDESCRIPTION (Z_PK, ZEPISODE, ZPLAINTEXT) values (?, ?, ?)",
+            (pk, pk, description),
         )
         return pk
 
