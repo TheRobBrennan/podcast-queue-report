@@ -39,7 +39,21 @@ def _resolve_db_path():
     return standard  # doesn't exist; downstream sqlite3.connect will raise clearly
 
 DB_PATH = _resolve_db_path()
-LOCAL_TZ = ZoneInfo(os.environ.get("REPORT_TIMEZONE", "UTC"))
+def _resolve_timezone_name():
+    """REPORT_TIMEZONE if set, else the Mac's current system zone (so travel just works), else UTC."""
+    explicit = os.environ.get("REPORT_TIMEZONE", "").strip()
+    if explicit:
+        return explicit
+    try:
+        target = os.path.realpath("/etc/localtime")
+        if "zoneinfo/" in target:
+            return target.split("zoneinfo/", 1)[1]
+    except OSError:
+        pass
+    return "UTC"
+
+REPORT_TIMEZONE_NAME = _resolve_timezone_name()
+LOCAL_TZ = ZoneInfo(REPORT_TIMEZONE_NAME)
 REPORT_EMAIL = os.environ.get("REPORT_EMAIL", "")
 REPORT_PHONE = os.environ.get("REPORT_PHONE", "")
 REPORT_SIGNOFF_NAME = os.environ.get("REPORT_SIGNOFF_NAME", "")
@@ -908,7 +922,7 @@ def main():
             "phone": REPORT_PHONE,
             "signoff_name": REPORT_SIGNOFF_NAME,
             "label": REPORT_LABEL,
-            "timezone": os.environ.get("REPORT_TIMEZONE", "UTC"),
+            "timezone": REPORT_TIMEZONE_NAME,
         },
     }
 
