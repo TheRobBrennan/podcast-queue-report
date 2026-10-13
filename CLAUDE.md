@@ -88,8 +88,12 @@ minimal built-in `.env` loader. Nothing to `pip install`.
     the PR shows the actual difference rather than just the end state.
   Save the PNG(s) under `assets/`, commit them on the PR branch, and embed
   them in the PR body via the raw GitHub URL (`https://raw.githubusercontent.com/
-  TheRobBrennan/podcast-queue-report/<branch>/assets/<file>.png`) - a
-  relative path or `../blob/...` link does not resolve in a PR body.
+  TheRobBrennan/podcast-queue-report/<commit-sha>/assets/<file>.png`) - a
+  relative path or `../blob/...` link does not resolve in a PR body. Use the
+  commit SHA that added the images (`git log -1 --format=%h -- assets/<file>.png`),
+  never the branch name: the branch is deleted on merge, which turns every
+  branch-based link into a 404 (broke PR #40's images on 2026-10-13). Check each
+  URL returns 200 with `curl` before saving the PR body.
   **Then show Rob the real thing** (open the live report, or send the
   screenshot) before treating the PR as done - a screenshot Claude looked at
   itself is not the same as Rob having seen it.
