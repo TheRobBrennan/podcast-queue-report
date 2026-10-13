@@ -178,7 +178,7 @@ python3 render_report.py /tmp/run.json html > reports/podcast_report.html
 | Variable | Purpose | Default if unset |
 |---|---|---|
 | `PODCASTS_DB_PATH` | Path to `MTLibrary.sqlite` | Auto-detects the standard macOS location |
-| `REPORT_TIMEZONE` | IANA timezone for date/window boundaries | `UTC` |
+| `REPORT_TIMEZONE` | IANA timezone for date/window boundaries | the Mac's system timezone |
 | `REPORT_SIGNOFF_NAME` | Name used in the email sign-off | (omitted if unset) |
 | `REPORT_EMAIL` | Delivery email address - `make email` (Outlook) skips if unset | (none) |
 | `REPORT_PHONE` | Delivery phone number - `make sms` (Messages.app) skips if unset | (none) |
