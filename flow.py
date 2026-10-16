@@ -587,13 +587,12 @@ def queue_card(qs, qe, tz=None):
     tone = queue_tone(qs["queue_count"], qe["queue_count"])
     bg, fg, arrow = QUEUE_TONES[tone]
     delta = qe["queue_count"] - qs["queue_count"]
-    since = f"since {clock(qs, tz)}"
+    since = f"since {clock(qs, tz)} {local_dt(qs, tz).strftime('%Z')}"
     n = abs(delta)
     noun = f"{n} episode" + ("" if n == 1 else "s")
-    start = qs["queue_count"]
-    sub = {"better": f"{arrow} {noun} from {start} {since}",
-           "same": f"{arrow} No change from {start} {since}",
-           "worse": f"{arrow} {noun} from {start} {since}"}[tone]
+    sub = {"better": f"{arrow} {noun} {since}",
+           "same": f"{arrow} No change {since}",
+           "worse": f"{arrow} {noun} {since}"}[tone]
     value_html = (f'<span style="display:inline-block;background:{bg};border-radius:12px;'
                   f'padding:6px 14px;font-size:30px;line-height:1.15;letter-spacing:2px;">'
                   f'{keycaps(qe["queue_count"])}</span>')
