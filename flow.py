@@ -85,15 +85,28 @@ def parse_fmt_seconds(text):
 
 
 def queue_by_show(d, top=None):
-    """The queue grouped by show: how many episodes and how much listening each holds."""
+    """The queue grouped by show: episode count, listening time, the oldest
+    waiting episode, and the show's artwork and link."""
     shows = {}
     for e in d["queue"].get("episodes", []):
-        row = shows.setdefault(e.get("podcast") or "Unknown", {"podcast": e.get("podcast") or "Unknown",
-                                                              "count": 0, "seconds": 0})
+        name = e.get("podcast") or "Unknown"
+        row = shows.setdefault(name, {"podcast": name, "count": 0, "seconds": 0, "oldest": None,
+                                      "artwork_url": None, "podcast_url": None})
         row["count"] += 1
         row["seconds"] += parse_fmt_seconds(e.get("duration_fmt"))
-    ranked = sorted(shows.values(), key=lambda r: (-r["count"], -r["seconds"]))
+        pub = e.get("pubdate")
+        if pub and (row["oldest"] is None or pub < row["oldest"]):
+            row["oldest"] = pub
+        row["artwork_url"] = row["artwork_url"] or e.get("artwork_url")
+        row["podcast_url"] = row["podcast_url"] or e.get("podcast_url")
+    ranked = sort_oldest_first(list(shows.values()))
     return ranked[:top] if top else ranked
+
+
+def sort_oldest_first(rows):
+    """Stalest show first (its oldest unplayed episode is the oldest); shows with
+    no date go last, ties by name."""
+    return sorted(rows, key=lambda r: (r.get("oldest") is None, r.get("oldest") or "", r["podcast"].lower()))
 
 
 def snapshot_from_run(d, label, source="live"):
@@ -661,72 +674,30 @@ def highlights(s, tz=None):
     return out
 
 
-PILE_COLORS = ("#a78bfa", "#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#fb923c")
-PILE_OTHER_COLOR = "#cbd5e1"
+def waiting_age(oldest_iso, now_utc):
+    """How long a show's oldest unplayed episode has been waiting."""
+    if not oldest_iso:
+        return None
+    return (now_utc - parse_utc(oldest_iso)).total_seconds()
 
 
-def pile_color(i, seg):
-    return PILE_OTHER_COLOR if seg.get("other") else PILE_COLORS[i % len(PILE_COLORS)]
+def pile_rows(s, d=None, now=None):
+    """Every show with something waiting, stalest first. Uses the latest run's
+    full queue when there is one, else the latest reading that recorded it."""
+    now = now or utcnow()
+    if d:
+        rows = queue_by_show(d)
+    else:
+        snap = s.get("by_show_snapshot")
+        rows = sort_oldest_first(list(snap.get("by_show") or [])) if snap else []
+    return [dict(r, age=waiting_age(r.get("oldest"), now)) for r in rows]
 
 
-def load_show_groups(raw=None):
-    """SHOW_GROUPS from .env: 'name=feed|feed;name=feed', matched as
-    case-insensitive substrings of the show name. Lets several feeds that are
-    really one thing (three Kraken shows) read as one slice of the queue."""
-    raw = os.environ.get("SHOW_GROUPS", "") if raw is None else raw
-    groups = []
-    for part in raw.split(";"):
-        if "=" not in part:
-            continue
-        name, pats = part.split("=", 1)
-        pats = [x.strip().lower() for x in pats.split("|") if x.strip()]
-        if name.strip() and pats:
-            groups.append((name.strip(), pats))
-    return groups
-
-
-def group_shows(by_show, groups):
-    out = {}
-    for r in by_show:
-        key = r["podcast"]
-        for name, pats in groups:
-            if any(x in r["podcast"].lower() for x in pats):
-                key = name
-                break
-        row = out.setdefault(key, {"name": key, "count": 0, "seconds": 0, "feeds": 0})
-        row["count"] += r["count"]
-        row["seconds"] += r["seconds"]
-        row["feeds"] += 1
-    return sorted(out.values(), key=lambda r: (-r["seconds"], -r["count"]))
-
-
-def pile_segments(snap, groups=None, top=6):
-    """The queue as slices of its own total: the top groups by listening time
-    plus 'Everything else', so the slices always add up to the whole."""
-    groups = load_show_groups() if groups is None else groups
-    ranked = group_shows(snap.get("by_show") or [], groups)
-    total = sum(r["seconds"] for r in ranked) or 1
-    segs = [dict(r, pct=100.0 * r["seconds"] / total) for r in ranked[:top]]
-    rest = ranked[top:]
-    if rest:
-        secs = sum(r["seconds"] for r in rest)
-        segs.append({"name": "Everything else", "count": sum(r["count"] for r in rest),
-                     "seconds": secs, "feeds": sum(r["feeds"] for r in rest),
-                     "pct": 100.0 * secs / total, "other": True})
-    return segs, total
-
-
-def pile_insight(segs):
-    if not segs:
-        return ""
-    top = segs[0]
-    return (f"Clear all of {top['name']} and the queue shrinks by {dur_n(top['seconds'])} "
-            f"({top['pct']:.0f}% of it)")
-
-
-def pile_line(seg):
-    feeds = f" · {seg['feeds']} feeds" if seg["feeds"] > 1 and not seg.get("other") else ""
-    return f"{seg['count']} eps · {dur_n(seg['seconds'])} · {seg['pct']:.0f}%{feeds}"
+def pile_line(row):
+    bits = [episodes_phrase(row["count"]), dur_n(row["seconds"])]
+    if row.get("age") is not None:
+        bits.append(f"oldest waiting {dur_n(row['age'])}")
+    return " · ".join(bits)
 
 
 def bar_chat(value, peak, width=10):
@@ -756,14 +727,14 @@ def render_day_chat(s, tz=None):
             f"listened {dur(dsh['listened_seconds'])}, queue {signed(dsh['queue_seconds_delta'])}, "
             f"behind {behind_phrase(dsh['behind_delta'])}"
         )
-    snap = s.get("by_show_snapshot")
-    if snap:
+    rows = pile_rows(s)
+    if rows:
         lines.append("")
-        lines.append("What's piling up:")
-        segs, _ = pile_segments(snap)
-        for seg in segs:
-            lines.append(f"  {seg['name']}: {pile_line(seg)}")
-        lines.append(f"  {pile_insight(segs)}")
+        lines.append(f"What's piling up ({len(rows)} shows, oldest first):")
+        for row in rows[:8]:
+            lines.append(f"  {row['podcast']}: {pile_line(row)}")
+        if len(rows) > 8:
+            lines.append(f"  ... and {len(rows) - 8} more")
     if s.get("now_playing"):
         np = s["now_playing"]
         lines.append(f"▶ Now playing: {np['title']} — {np['podcast']}")
@@ -1078,36 +1049,35 @@ def timeline_html(s, tz=None):
     )
 
 
-def piling_up_html(s):
-    snap = s.get("by_show_snapshot")
-    if not snap:
+def piling_up_html(s, d=None):
+    rows = pile_rows(s, d)
+    if not rows:
         return ""
-    segs, _ = pile_segments(snap)
-    if not segs:
-        return ""
-    bar = "".join(
-        f'<div title="{html.escape(seg["name"])}" style="width:{max(seg["pct"], 1):.2f}%;'
-        f'background:{pile_color(i, seg)};height:18px;"></div>'
-        for i, seg in enumerate(segs)
-    )
-    legend = "".join(
-        '<div style="display:flex;align-items:center;margin:8px 0;font-size:13px;">'
-        f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:10px;'
-        f'background:{pile_color(i, seg)};"></span>'
-        f'<span style="flex:1;font-weight:600;">{html.escape(seg["name"])}</span>'
-        f'<span style="color:#64748b;">{html.escape(pile_line(seg))}</span></div>'
-        for i, seg in enumerate(segs)
-    )
-    inner = (
-        '<div style="display:flex;border-radius:9px;overflow:hidden;margin-bottom:14px;">' + bar + '</div>'
-        + legend
-        + f'<div style="margin-top:12px;padding-top:12px;border-top:1px solid #f1f5f9;font-size:13px;color:#475569;">'
-          f'💡 {html.escape(pile_insight(segs))}</div>'
-    )
+    items = ""
+    for row in rows:
+        art = ""
+        if row.get("artwork_url"):
+            img = (f'<img src="{html.escape(row["artwork_url"])}" width="34" height="34" '
+                   'style="border-radius:6px;display:block;" alt="">')
+            art = (f'<a href="{html.escape(row["podcast_url"])}" target="_blank">{img}</a>'
+                   if row.get("podcast_url") else img)
+        age = (f'<div style="font-size:12px;color:#b45309;font-weight:600;">oldest waiting {html.escape(dur_n(row["age"]))}</div>'
+               if row.get("age") is not None else "")
+        items += (
+            '<div style="display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;">'
+            f'<div style="flex:0 0 34px;">{art}</div>'
+            f'<div style="flex:1;min-width:0;font-size:13px;font-weight:600;">'
+            f'{_link(row["podcast"], row.get("podcast_url"), "#1e293b")}</div>'
+            '<div style="text-align:right;font-size:12px;color:#64748b;white-space:nowrap;">'
+            f'{html.escape(episodes_phrase(row["count"]))} · {html.escape(dur_n(row["seconds"]))}{age}</div></div>'
+        )
+    total = sum(r["count"] for r in rows)
     return (
         '<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
-        'margin:24px 0 10px;">What&rsquo;s piling up</div>'
-        + _white_card(inner, 16)
+        'margin:24px 0 4px;">What&rsquo;s piling up</div>'
+        f'<div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">{len(rows)} shows, {total} episodes, '
+        'the longest-waiting first</div>'
+        + _white_card(items, 16)
     )
 
 
@@ -1199,7 +1169,7 @@ def render_day_html(s, tz=None, generated=None, d=None):
         nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
     parts.append(now_playing_card_html(np, nxt))
     parts.append(timeline_html(s, tz))
-    parts.append(piling_up_html(s))
+    parts.append(piling_up_html(s, d))
     return _page(title, "".join(parts), day_headline(s), generated, tz,
                  queue_section_html(d) if d else "")
 
@@ -1282,12 +1252,13 @@ def build_discord_day(s, generated=None, tz=None):
     ]
     shape = "\n".join(lines[-9:])
     fields.append(_field("__\U0001f552 The shape of your day__", shape[:1000], inline=False))
-    snap = s.get("by_show_snapshot")
-    if snap:
-        segs, _ = pile_segments(snap)
-        piling = "\n".join(f"**{seg['name'][:40]}** \u00b7 {pile_line(seg)}" for seg in segs)
-        piling += f"\n\U0001f4a1 {pile_insight(segs)}"
-        fields.append(_field("__\U0001f4da What's piling up__", piling[:1000], inline=False))
+    rows = pile_rows(s)
+    if rows:
+        piling = "\n".join(f"**{r['podcast'][:36]}** \u00b7 {pile_line(r)}" for r in rows[:8])
+        if len(rows) > 8:
+            piling += f"\n\u2026 and {len(rows) - 8} more"
+        fields.append(_field(f"__\U0001f4da What's piling up ({len(rows)} shows, longest-waiting first)__",
+                             piling[:1000], inline=False))
     if s.get("now_playing"):
         np = s["now_playing"]
         fields.append(_field("__\u25b6 Now playing__", f"{np['title']} \u2014 {np['podcast']}"[:300], inline=False))

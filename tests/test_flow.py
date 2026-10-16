@@ -236,8 +236,8 @@ class StoryTests(unittest.TestCase):
             snap("2026-10-16T22:00", "evening", 119, 298000, 870000, 5, 10800),
         ]
         self.history[2]["now_playing"] = {"title": "Pregame", "podcast": "Kraken Audio"}
-        self.history[3]["by_show"] = [{"podcast": "Kraken Audio", "count": 59, "seconds": 90000},
-                                      {"podcast": "RedHanded", "count": 30, "seconds": 40000}]
+        self.history[3]["by_show"] = [{"podcast": "Kraken Audio", "count": 59, "seconds": 90000, "oldest": "2026-10-06T07:00:00"},
+                                      {"podcast": "RedHanded", "count": 30, "seconds": 40000, "oldest": "2026-10-09T07:00:00"}]
         self.s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
 
     def test_parse_fmt_seconds(self):
@@ -245,26 +245,30 @@ class StoryTests(unittest.TestCase):
         self.assertEqual(flow.parse_fmt_seconds("1\xa0week 2\xa0days"), 604800 + 172800)
         self.assertEqual(flow.parse_fmt_seconds(""), 0)
 
-    def test_show_groups_fold_feeds_into_one_slice(self):
-        groups = flow.load_show_groups("🏒 Kraken=Seattle Kraken Audio Network|Beneath The Waves;Other=zzz")
-        self.assertEqual(groups[0][0], "🏒 Kraken")
-        by_show = [
-            {"podcast": "Seattle Kraken Audio Network", "count": 25, "seconds": 36000},
-            {"podcast": "Beneath The Waves: A Seattle Kraken Podcast", "count": 4, "seconds": 14000},
-            {"podcast": "RedHanded", "count": 6, "seconds": 9000},
-        ]
-        grouped = flow.group_shows(by_show, groups)
-        self.assertEqual((grouped[0]["name"], grouped[0]["count"], grouped[0]["seconds"], grouped[0]["feeds"]),
-                         ("🏒 Kraken", 29, 50000, 2))
-        self.assertEqual(grouped[1]["name"], "RedHanded")
+    def test_every_show_is_listed_oldest_first_even_with_one_episode(self):
+        d = {"queue": {"episodes": [
+            {"podcast": "New Show", "duration_fmt": "30 mins", "pubdate": "2026-10-15T07:00:00", "artwork_url": "https://a/n.jpg"},
+            {"podcast": "Old Show", "duration_fmt": "1 hr", "pubdate": "2026-10-06T07:00:00", "podcast_url": "https://p/o"},
+            {"podcast": "Old Show", "duration_fmt": "30 mins", "pubdate": "2026-10-09T07:00:00"},
+            {"podcast": "Middle Show", "duration_fmt": "10 mins", "pubdate": "2026-10-10T07:00:00"},
+        ]}}
+        rows = flow.queue_by_show(d)
+        self.assertEqual([r["podcast"] for r in rows], ["Old Show", "Middle Show", "New Show"])
+        self.assertEqual((rows[0]["count"], rows[0]["seconds"], rows[0]["oldest"]), (2, 5400, "2026-10-06T07:00:00"))
+        self.assertEqual(rows[2]["count"], 1)
 
-    def test_slices_add_up_to_the_whole_with_an_everything_else(self):
-        by_show = [{"podcast": f"Show {i}", "count": 1, "seconds": 1000} for i in range(8)]
-        segs, total = flow.pile_segments({"by_show": by_show}, groups=[], top=4)
-        self.assertEqual(len(segs), 5)
-        self.assertTrue(segs[-1].get("other"))
-        self.assertAlmostEqual(sum(s["pct"] for s in segs), 100.0)
-        self.assertIn("Clear all of Show", flow.pile_insight(segs))
+    def test_pile_section_lists_every_show_with_age_artwork_and_links(self):
+        d = {"queue": {"episodes": [
+            {"podcast": "Old Show", "duration_fmt": "1 hr", "pubdate": "2026-10-06T07:00:00",
+             "artwork_url": "https://a/o.jpg", "podcast_url": "https://p/o"},
+            {"podcast": "Single Show", "duration_fmt": "10 mins", "pubdate": "2026-10-15T07:00:00"},
+        ]}}
+        s = {"by_show_snapshot": None}
+        page = flow.piling_up_html(s, d)
+        for needle in ("2 shows, 2 episodes", "Old Show", "Single Show", 'src="https://a/o.jpg"',
+                       'href="https://p/o"', "oldest waiting"):
+            self.assertIn(needle, page)
+        self.assertLess(page.index("Old Show"), page.index("Single Show"))
 
     def test_no_by_show_data_means_no_section(self):
         self.assertEqual(flow.piling_up_html({"by_show_snapshot": None}), "")
@@ -481,7 +485,7 @@ class StoryTests(unittest.TestCase):
 
     def test_story_shows_up_in_every_format(self):
         chat = flow.render_day_chat(self.s, NY)
-        for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest listening stretch", "Clear all of"):
+        for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest listening stretch"):
             self.assertIn(needle, chat)
         page = flow.render_day_html(self.s, NY)
         for needle in ("What&rsquo;s piling up", "Pregame", "The oldest unplayed episode in your queue"):
