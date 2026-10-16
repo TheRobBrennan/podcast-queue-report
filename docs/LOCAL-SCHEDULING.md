@@ -55,8 +55,13 @@ travel needs no reload.
 | dash-start | the `/doordash` skill at "Let's Dash"           | none - a Dash is only known when it is announced  |
 | dash-end   | the `/doordash` skill at "Dash complete"        | none                                              |
 | evening    | `/close-day` runs `make snapshot LABEL=evening` | first tick at or after 10:00pm with none today    |
+| pulse      | none, this one only ever comes from the tick   | about every two hours, 6am to 11pm, while the Mac is awake; quiet (history only, no Discord, no email) |
 
-The evening snapshot emails the daily flow. On Sundays it also emails the
+Pulses exist so a Dash announced after the fact still has readings near its
+real times: `make tag-dash START=10:11am END=6:18pm` labels the nearest two
+ordinary readings (within two hours) as the Dash start and end, marked "≈".
+
+The evening snapshot emails the daily flow (only when `FLOW_EMAIL=1`). On Sundays it also emails the
 weekly roll-up. Every snapshot posts to Discord and rewrites
 `reports/podcast_report.html`, but none of them open a browser.
 

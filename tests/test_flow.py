@@ -165,15 +165,23 @@ class TickTests(unittest.TestCase):
     def test_no_morning_snapshot_by_11am_triggers_the_fallback(self):
         self.assertEqual(flow.decide_tick([], now_ny("2026-10-16T11:06"), NY), "morning")
 
-    def test_before_11am_waits_for_a_real_trigger(self):
-        self.assertIsNone(flow.decide_tick([], now_ny("2026-10-16T09:06"), NY))
+    def test_before_11am_takes_only_a_quiet_reading(self):
+        self.assertEqual(flow.decide_tick([], now_ny("2026-10-16T09:06"), NY), "pulse")
 
     def test_existing_morning_snapshot_suppresses_the_fallback(self):
         history = [snap("2026-10-16T08:00", "morning")]
+        self.assertEqual(flow.decide_tick(history, now_ny("2026-10-16T15:06"), NY), "pulse")
+        history = [snap("2026-10-16T08:00", "morning"), snap("2026-10-16T14:30", "manual")]
         self.assertIsNone(flow.decide_tick(history, now_ny("2026-10-16T15:06"), NY))
 
-    def test_late_afternoon_with_no_morning_snapshot_does_nothing(self):
-        self.assertIsNone(flow.decide_tick([], now_ny("2026-10-16T18:06"), NY))
+    def test_late_afternoon_with_no_morning_snapshot_is_a_quiet_reading_not_a_morning(self):
+        self.assertEqual(flow.decide_tick([], now_ny("2026-10-16T18:06"), NY), "pulse")
+
+    def test_quiet_readings_come_about_every_two_hours_and_not_in_the_small_hours(self):
+        h = [snap("2026-10-16T08:00", "morning"), snap("2026-10-16T12:06", "pulse")]
+        self.assertIsNone(flow.decide_tick(h, now_ny("2026-10-16T13:06"), NY))
+        self.assertEqual(flow.decide_tick(h, now_ny("2026-10-16T14:06"), NY), "pulse")
+        self.assertIsNone(flow.decide_tick(h, now_ny("2026-10-17T03:06"), NY))
 
     def test_evening_fallback_at_10pm(self):
         history = [snap("2026-10-16T08:00", "morning")]
@@ -195,7 +203,7 @@ class TickTests(unittest.TestCase):
         # 11:06pm New York is 8:06pm Los Angeles: not evening yet there
         now = now_ny("2026-10-16T23:06")
         self.assertEqual(flow.decide_tick([], now, NY), "evening")
-        self.assertIsNone(flow.decide_tick([], now, la))
+        self.assertEqual(flow.decide_tick([], now, la), "pulse")
 
 
 def minimal_run_json():
@@ -505,6 +513,63 @@ class GeneratedAndQueueTests(unittest.TestCase):
             os.environ.pop("FLOW_EMAIL", None)
             if old is not None:
                 os.environ["FLOW_EMAIL"] = old
+
+
+class TagDashTests(unittest.TestCase):
+    def setUp(self):
+        self.history = [
+            snap("2026-10-16T08:00", "morning"),
+            snap("2026-10-16T10:06", "pulse"),
+            snap("2026-10-16T12:06", "pulse"),
+            snap("2026-10-16T14:06", "pulse"),
+            snap("2026-10-16T18:06", "pulse"),
+            snap("2026-10-16T22:00", "evening"),
+        ]
+        self.day = datetime.date(2026, 10, 16)
+
+    def test_parse_clock(self):
+        self.assertEqual(flow.parse_clock("10:11am"), datetime.time(10, 11))
+        self.assertEqual(flow.parse_clock("6:18pm"), datetime.time(18, 18))
+        self.assertEqual(flow.parse_clock("12:05am"), datetime.time(0, 5))
+        self.assertEqual(flow.parse_clock("18:18"), datetime.time(18, 18))
+        self.assertEqual(flow.parse_clock("10am"), datetime.time(10, 0))
+        with self.assertRaises(ValueError):
+            flow.parse_clock("soon")
+
+    def test_tags_the_nearest_ordinary_readings(self):
+        rows, msgs, ok = flow.tag_dash(self.history, self.day, datetime.time(10, 11), datetime.time(18, 18), NY)
+        self.assertTrue(ok)
+        labels = {flow.local_dt(r, NY).strftime("%H:%M"): r["label"] for r in rows}
+        self.assertEqual(labels["10:06"], "dash-start")
+        self.assertEqual(labels["18:06"], "dash-end")
+        self.assertTrue(all(r.get("approx") for r in rows if r["label"].startswith("dash")))
+        self.assertEqual(labels["08:00"], "morning")
+        self.assertEqual(labels["22:00"], "evening")
+        # the original history is untouched until the caller writes it
+        self.assertTrue(all(r["label"] != "dash-start" for r in self.history))
+
+    def test_never_overwrites_a_morning_or_evening_reading(self):
+        history = [snap("2026-10-16T10:00", "morning"), snap("2026-10-16T12:00", "pulse"),
+                   snap("2026-10-16T18:00", "evening")]
+        rows, msgs, ok = flow.tag_dash(history, self.day, datetime.time(10, 11), datetime.time(18, 18), NY, 120)
+        self.assertFalse(ok)  # the only candidates near the end are the evening reading and the 12:00 pulse is too far
+        self.assertEqual(rows, history)
+
+    def test_nothing_tagged_when_no_reading_is_close(self):
+        history = [snap("2026-10-16T07:00", "pulse"), snap("2026-10-16T21:00", "pulse")]
+        rows, msgs, ok = flow.tag_dash(history, self.day, datetime.time(10, 11), datetime.time(18, 18), NY, 90)
+        self.assertFalse(ok)
+        self.assertIn("no ordinary reading within 90 minutes", " ".join(msgs))
+        self.assertEqual(rows, history)
+
+    def test_end_must_follow_start(self):
+        _, msgs, ok = flow.tag_dash(self.history, self.day, datetime.time(18, 0), datetime.time(10, 0), NY)
+        self.assertFalse(ok)
+
+    def test_a_tagged_dash_shows_up_in_the_day(self):
+        rows, _, _ = flow.tag_dash(self.history, self.day, datetime.time(10, 11), datetime.time(18, 18), NY)
+        s = flow.summarize_day(rows, self.day, NY)
+        self.assertEqual(len(s["dashes"]), 1)
 
 
 class RenderTests(unittest.TestCase):

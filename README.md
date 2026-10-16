@@ -250,6 +250,20 @@ day:
 behind movement); the Sunday evening snapshot emails it. A "day" runs 4:00am
 to 4:00am local time.
 
+Between those, the hourly tick takes a quiet **pulse** reading about every two
+hours (6am to 11pm, while the Mac is awake): history only, no Discord post, no
+email. That keeps readings close to whatever you were doing, so a Dash you
+announce **after the fact** still has readings near its real times:
+
+```bash
+make tag-dash START=10:11am END=6:18pm                 # today
+make tag-dash DAY=2026-10-15 START=10:11am END=6:18pm  # another day
+```
+
+`tag-dash` labels the nearest ordinary readings (within two hours) as the Dash
+start and end, marked "≈" in the report; it never overwrites a morning,
+evening, or live Dash reading, and tags nothing if no reading is close enough.
+
 Run `make snapshot LABEL=manual` any time for an extra data point. See
 **[docs/LOCAL-SCHEDULING.md](docs/LOCAL-SCHEDULING.md)** for how the hourly
 launchd tick decides when a fallback is due.

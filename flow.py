@@ -44,13 +44,14 @@ HISTORY_PATH = os.environ.get(
     "PODCAST_HISTORY_PATH", os.path.join(SCRIPT_DIR, ".podcast_history.jsonl")
 )
 RUN_JSON = os.environ.get("RUN_JSON", "/tmp/podcast_run.json")
-LABELS = ("morning", "dash-start", "dash-end", "evening", "manual")
+LABELS = ("morning", "dash-start", "dash-end", "evening", "manual", "pulse")
 LABEL_NAMES = {
     "morning": ("☀️", "Morning"),
     "dash-start": ("🚐", "Dash start"),
     "dash-end": ("🏁", "Dash end"),
     "evening": ("🌙", "Evening"),
     "manual": ("📸", "Check-in"),
+    "pulse": ("📸", "Check-in"),
 }
 _UNIT_SECONDS = {"week": 604800, "day": 86400, "hr": 3600, "min": 60, "second": 1}
 
@@ -59,6 +60,8 @@ MORNING_FALLBACK_HOUR = 11
 MORNING_FALLBACK_END_HOUR = 17   # past this, a "morning" snapshot would be a lie
 EVENING_FALLBACK_HOUR = 22
 MIN_GAP_MINUTES = 20
+PULSE_EVERY_MINUTES = 110      # a quiet reading about every two hours while the Mac is awake
+PULSE_FIRST_HOUR, PULSE_LAST_HOUR = 6, 23
 REPORTS_DIR = os.path.join(SCRIPT_DIR, "reports")
 DISCORD_FLOW_LABELS = ("dash-end", "evening")
 
@@ -330,12 +333,14 @@ def summarize_week(history, anchor_day, tz=None):
 # --- scheduling ------------------------------------------------------------
 
 def decide_tick(history, now_utc, tz=None, min_gap_minutes=MIN_GAP_MINUTES):
-    """What the hourly tick should do right now: "morning", "evening", or
-    None. Uses the Mac's local clock at run time, so it follows travel
-    between time zones without reloading the launchd agent."""
+    """What the hourly tick should do right now: "evening", "morning",
+    "pulse" (a quiet reading, history only), or None. Uses the Mac's local
+    clock at run time, so it follows travel between time zones without
+    reloading the launchd agent."""
     now_local = now_utc.astimezone(tz or ps.LOCAL_TZ)
     day = day_of(now_local)
     labels = {s["label"] for s in day_snapshots(history, day, tz)}
+    gap = None
     if history:
         gap = now_utc - parse_utc(history[-1]["ts"])
         if gap < datetime.timedelta(minutes=min_gap_minutes):
@@ -349,7 +354,88 @@ def decide_tick(history, now_utc, tz=None, min_gap_minutes=MIN_GAP_MINUTES):
         and MORNING_FALLBACK_HOUR <= now_local.hour < MORNING_FALLBACK_END_HOUR
     ):
         return "morning"
+    # Quiet readings keep the history dense enough that a Dash announced
+    # after the fact (tag-dash) still has readings close to its real times.
+    if (
+        PULSE_FIRST_HOUR <= now_local.hour < PULSE_LAST_HOUR
+        and (gap is None or gap >= datetime.timedelta(minutes=PULSE_EVERY_MINUTES))
+    ):
+        return "pulse"
     return None
+
+
+# --- tagging a Dash after the fact -------------------------------------------
+
+TRIGGER_LABELS = ("morning", "evening", "dash-start", "dash-end")
+
+
+def parse_clock(text):
+    """'10:11am', '6:18pm', '18:18', '10am' -> datetime.time"""
+    m = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*([ap]m)?\s*", text.lower())
+    if not m:
+        raise ValueError(f"can't read the time {text!r}")
+    hour, minute, ampm = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+    if ampm == "pm" and hour < 12:
+        hour += 12
+    if ampm == "am" and hour == 12:
+        hour = 0
+    return datetime.time(hour, minute)
+
+
+def tag_dash(history, day, start_time, end_time, tz=None, within_minutes=120):
+    """Label the readings nearest a Dash's real start and end as dash-start and
+    dash-end (marked approximate). Returns (history, messages, ok). Only
+    ordinary readings (check-ins and pulses) are relabeled; a reading that is
+    already a morning, evening, or Dash reading is never overwritten."""
+    zone = tz or ps.LOCAL_TZ
+    rows = [dict(r) for r in history]
+
+    def at(clock_time, plus_day=0):
+        base = datetime.datetime.combine(day + datetime.timedelta(days=plus_day), clock_time, tzinfo=zone)
+        # times before the 4am day boundary belong to the next calendar date
+        if clock_time.hour < DAY_STARTS_HOUR:
+            base += datetime.timedelta(days=1)
+        return base.astimezone(datetime.timezone.utc)
+
+    start_dt, end_dt = at(start_time), at(end_time)
+    if end_dt <= start_dt:
+        return history, ["the end is not after the start"], False
+
+    def nearest(target, taken):
+        best = None
+        for i, r in enumerate(rows):
+            if i in taken or r["label"] in TRIGGER_LABELS:
+                continue
+            gap = abs((parse_utc(r["ts"]) - target).total_seconds()) / 60
+            if gap <= within_minutes and (best is None or gap < best[0]):
+                best = (gap, i)
+        return best
+
+    messages, taken = [], set()
+    ok = True
+    for label, target, shown in (("dash-start", start_dt, start_time), ("dash-end", end_dt, end_time)):
+        best = nearest(target, taken)
+        if best is None:
+            messages.append(f"no ordinary reading within {within_minutes} minutes of "
+                            f"{shown.strftime('%-I:%M%p').lower()}; {label} not tagged")
+            ok = False
+            continue
+        gap, i = best
+        rows[i]["label"] = label
+        rows[i]["approx"] = True
+        taken.add(i)
+        got = local_dt(rows[i], zone).strftime("%-I:%M%p").lower()
+        messages.append(f"{label}: tagged the {got} reading ({gap:.0f} min from "
+                        f"{shown.strftime('%-I:%M%p').lower()})")
+    if not ok:
+        return history, messages, False
+    return rows, messages, True
+
+
+def write_history(rows, path=None):
+    with open(path or HISTORY_PATH, "w") as f:
+        for r in sorted(rows, key=lambda r: r["ts"]):
+            f.write(json.dumps(r, sort_keys=True) + "\n")
 
 
 # --- formatting ------------------------------------------------------------
@@ -1155,7 +1241,7 @@ def take_snapshot(label, quiet=False, open_report=False, history_path=None):
     print(f"\U0001f310 Web report: {paths['day']}")
     if open_report:
         subprocess.run(["open", paths["day"]])
-    if not quiet:
+    if not quiet and label != "pulse":
         _pipe(["discord"], "post_discord.py")
         if label in DISCORD_FLOW_LABELS:
             _send(json.dumps(build_discord_day(s, generated)), "post_discord.py")
@@ -1211,6 +1297,12 @@ def main(argv=None):
         p.add_argument("--no-queue", action="store_true",
                        help="leave the unplayed queue off html/email (it is added from the last run's JSON by default)")
 
+    p = sub.add_parser("tag-dash", help="label the readings nearest a Dash's real start and end")
+    p.add_argument("--date", help="the day the Dash started (YYYY-MM-DD), default today")
+    p.add_argument("--start", required=True, help="when the Dash really started, e.g. 10:11am")
+    p.add_argument("--end", required=True, help="when the Dash really ended, e.g. 6:18pm")
+    p.add_argument("--within", type=int, default=120, help="how many minutes away a reading may be")
+
     p = sub.add_parser("tick", help="hourly scheduler entry point")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--now", help="ISO time with offset, for testing")
@@ -1221,6 +1313,15 @@ def main(argv=None):
         return 0
     if args.cmd == "tick":
         return cmd_tick(args)
+    if args.cmd == "tag-dash":
+        history = load_history()
+        rows, messages, ok = tag_dash(history, _arg_day(args.date), parse_clock(args.start),
+                                      parse_clock(args.end), within_minutes=args.within)
+        for m in messages:
+            print(m)
+        if ok:
+            write_history(rows)
+        return 0 if ok else 1
 
     history = load_history()
     day = _arg_day(args.date)
