@@ -294,7 +294,7 @@ class StoryTests(unittest.TestCase):
     def test_context_compares_to_yesterday_at_the_same_time_of_day(self):
         self.assertEqual(self.s["yesterday_listened"], 3000)
         lines = " ".join(line for _, line in flow.vs_lines(self.s, NY))
-        self.assertIn("more than yesterday at this time (yesterday by 10:00pm: 50 mins)", lines)
+        self.assertIn("You've listened 4 hrs 10 mins more than yesterday at this time: 5 hrs vs 50 mins by 10:00pm", lines)
         self.assertNotIn("your usual", lines)  # one earlier day is not an average
 
     def test_an_average_needs_two_earlier_days_and_stops_at_the_same_hour(self):
@@ -313,8 +313,8 @@ class StoryTests(unittest.TestCase):
         self.assertEqual(s["recent_days"], 2)
         self.assertEqual(s["recent_average"], 5400)
         lines = " ".join(line for _, line in flow.vs_lines(s, NY))
-        self.assertIn("1 hr 30 mins less than yesterday at this time (yesterday by 12:00pm: 2 hrs)", lines)
-        self.assertIn("1 hr below your usual at this time (average of 2 days by 12:00pm: 1 hr 30 mins)", lines)
+        self.assertIn("You've listened 1 hr 30 mins less than yesterday at this time: 30 mins vs 2 hrs by 12:00pm", lines)
+        self.assertIn("You're 1 hr below your usual listening at this time: 30 mins vs an average of 1 hr 30 mins by 12:00pm (2 days)", lines)
 
     def test_now_playing_card_has_artwork_links_progress_and_up_next(self):
         np = {"title": "The Nightmare Cure", "podcast": "MrBallen", "episode_url": "https://e/1",
