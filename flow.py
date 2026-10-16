@@ -406,7 +406,12 @@ def highlights(s, tz=None):
     return out
 
 
-PILE_COLORS = ("#a78bfa", "#38bdf8", "#34d399", "#fbbf24", "#cbd5e1")
+PILE_COLORS = ("#a78bfa", "#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#fb923c")
+PILE_OTHER_COLOR = "#cbd5e1"
+
+
+def pile_color(i, seg):
+    return PILE_OTHER_COLOR if seg.get("other") else PILE_COLORS[i % len(PILE_COLORS)]
 
 
 def load_show_groups(raw=None):
@@ -674,13 +679,13 @@ def piling_up_html(s):
         return ""
     bar = "".join(
         f'<div title="{html.escape(seg["name"])}" style="width:{max(seg["pct"], 1):.2f}%;'
-        f'background:{PILE_COLORS[min(i, len(PILE_COLORS) - 1)]};height:18px;"></div>'
+        f'background:{pile_color(i, seg)};height:18px;"></div>'
         for i, seg in enumerate(segs)
     )
     legend = "".join(
         '<div style="display:flex;align-items:center;margin:8px 0;font-size:13px;">'
         f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:10px;'
-        f'background:{PILE_COLORS[min(i, len(PILE_COLORS) - 1)]};"></span>'
+        f'background:{pile_color(i, seg)};"></span>'
         f'<span style="flex:1;font-weight:600;">{html.escape(seg["name"])}</span>'
         f'<span style="color:#64748b;">{html.escape(pile_line(seg))}</span></div>'
         for i, seg in enumerate(segs)
