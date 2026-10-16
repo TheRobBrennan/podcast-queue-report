@@ -84,19 +84,6 @@ def parse_fmt_seconds(text):
     return total
 
 
-def oldest_episode_from_run(d):
-    """The oldest unplayed episode - the one the 'behind' figure measures: the
-    oldest that has not been started, or the oldest of all if every one has."""
-    eps = d["queue"].get("episodes", [])
-    fresh = [e for e in eps if not e.get("in_progress")] or eps
-    dated = [e for e in fresh if e.get("pubdate")]
-    if not dated:
-        return None
-    e = min(dated, key=lambda x: x["pubdate"])
-    return {k: e.get(k) for k in ("title", "podcast", "episode_url", "podcast_url", "artwork_url", "pubdate")
-            if e.get(k) is not None}
-
-
 def in_progress_episodes(d, top=8):
     """Episodes you have started but not finished: how far through each, and
     how much is left."""
@@ -175,9 +162,6 @@ def snapshot_from_run(d, label, source="live"):
         snap["now_playing"] = {k: np.get(k) for k in (
             "title", "podcast", "episode_url", "podcast_url", "artwork_url",
             "elapsed_seconds", "duration_seconds", "remaining_fmt") if np.get(k) is not None}
-    oldest_ep = oldest_episode_from_run(d)
-    if oldest_ep:
-        snap["oldest_episode"] = oldest_ep
     started = in_progress_episodes(d)
     if started:
         snap["in_progress"] = started
@@ -339,8 +323,6 @@ def summarize_day(history, day, tz=None):
         history, day, tz, cutoff=day_offset(last, tz))
     started = [sn for sn in snaps if sn.get("in_progress")]
     out["in_progress_snapshot"] = started[-1] if started else None
-    olds = [sn for sn in snaps if sn.get("oldest_episode")]
-    out["oldest_episode"] = olds[-1]["oldest_episode"] if olds else None
     shows = [sn for sn in snaps if sn.get("by_show")]
     out["by_show_snapshot"] = shows[-1] if shows else None
     playing = [sn for sn in snaps if sn.get("now_playing")]
@@ -883,37 +865,13 @@ def _card(label, value, sub="", hint="", value_html=None, sub_html=None, extra_h
     )
 
 
-def oldest_episode_html(ep, tz=None):
-    """The oldest unplayed episode itself: artwork, linked title and show, and
-    when it was published."""
-    if not ep or not ep.get("title"):
-        return ""
-    art = ""
-    if ep.get("artwork_url"):
-        img = (f'<img src="{html.escape(ep["artwork_url"])}" width="44" height="44" '
-               'style="border-radius:8px;display:block;" alt="">')
-        link = ep.get("episode_url") or ep.get("podcast_url")
-        art = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
-    when = ""
-    if ep.get("pubdate"):
-        age = (utcnow() - parse_utc(ep["pubdate"])).total_seconds()
-        when = (f'<div style="font-size:12px;color:#94a3b8;margin-top:1px;">'
-                f'{html.escape(published_label(ep["pubdate"], tz))} · {html.escape(ago_phrase(age))}</div>')
-    return (
-        '<div style="display:flex;gap:12px;align-items:center;margin-top:14px;padding-top:14px;'
-        'border-top:1px solid #f1f5f9;">'
-        f'<div style="flex:0 0 44px;">{art}</div>'
-        '<div style="flex:1;min-width:0;">'
-        f'<div style="font-size:13px;font-weight:700;line-height:1.3;">{_link(ep["title"], ep.get("episode_url"), "#1e293b")}</div>'
-        f'<div style="font-size:12px;color:#64748b;">{_link(ep.get("podcast"), ep.get("podcast_url"), "#64748b")}</div>'
-        f'{when}</div></div>'
-    )
-
-
 def card_grid(cards):
     """Two cards across, every row as tall as its tallest card."""
+    body = "".join(cards[:-1] if len(cards) % 2 else cards)
+    if len(cards) % 2:
+        body += f'<div style="grid-column:1 / -1;">{cards[-1]}</div>'   # an odd one out takes the whole row
     return ('<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
-            + "".join(cards) + "</div>")
+            + body + "</div>")
 
 
 def keycaps(n):
@@ -957,18 +915,6 @@ def arrivals_line(count, arrived_seconds, listened_seconds, since):
     fg = ARRIVAL_COLORS[tone]
     noun = f"{count} episode" + ("" if count == 1 else "s")
     return f'<span style="color:{fg};font-weight:600;">\u25b2 {html.escape(noun)} {html.escape(since)}</span>'
-
-
-def age_line(delta, since):
-    """The oldest-episode change, colored like the queue card: green when the
-    oldest unplayed episode is newer than at the start, yellow when unchanged,
-    red when it has slipped further behind."""
-    tone = "better" if round(delta) < 0 else ("worse" if round(delta) > 0 else "same")
-    _, fg, arrow = QUEUE_TONES[tone]
-    text = {"better": f"{arrow} Improved {dur_n(delta)} {since}",
-            "same": f"{arrow} No change {since}",
-            "worse": f"{arrow} Slipped {dur_n(delta)} {since}"}[tone]
-    return f'<span style="color:{fg};font-weight:600;">{html.escape(text)}</span>'
 
 
 def queue_card(qs, qe, tz=None):
@@ -1402,9 +1348,6 @@ def render_day_html(s, tz=None, generated=None, d=None):
         _card("Finished", dur(s["listened_seconds"]),
               f"{s['listened_count']} episode{'' if s['listened_count'] == 1 else 's'} finished {since_label(qs, tz)}"),
         queue_card(qs, qe, tz),
-        _card("The oldest unplayed episode in your queue", dur_n(qe['behind_seconds'], 4),
-              sub_html=age_line(s["behind_delta"], since_label(qs, tz)),
-              extra_html=oldest_episode_html(oldest_episode_from_run(d) if d else s.get("oldest_episode"), tz)),
         _card("New arrivals", dur(s["arrivals_seconds"]),
               sub_html=arrivals_line(s["arrivals_count"], s["arrivals_seconds"], s["listened_seconds"],
                                      since_label(qs, tz))),

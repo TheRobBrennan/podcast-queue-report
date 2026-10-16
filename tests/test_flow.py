@@ -396,19 +396,8 @@ class StoryTests(unittest.TestCase):
     def test_every_card_says_since_the_same_time(self):
         s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
         page = flow.render_day_html(s, NY)
-        self.assertEqual(page.count("since 9:00am EDT"), 4)  # listened, queue, oldest, arrivals
+        self.assertEqual(page.count("since 9:00am EDT"), 3)  # finished, queue, arrivals
         self.assertIn("episodes finished since 9:00am EDT", page)
-
-    def test_oldest_episode_line_is_green_yellow_or_red_like_the_queue(self):
-        since = "since 9:00am EDT"
-        better = flow.age_line(-18000, since)
-        self.assertIn("#15803d", better)
-        self.assertIn("▼ Improved 5 hrs", better)
-        self.assertIn("#a16207", flow.age_line(0, since))
-        self.assertIn("▬ No change", flow.age_line(0, since))
-        worse = flow.age_line(7200, since)
-        self.assertIn("#b91c1c", worse)
-        self.assertIn("▲ Slipped 2 hrs", worse)
 
     def test_every_card_value_is_the_same_size_and_never_wraps(self):
         for text in ("6 hrs 21 mins", "1 week 2 days 10 hrs 48 mins"):
@@ -499,7 +488,7 @@ class StoryTests(unittest.TestCase):
         for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest stretch"):
             self.assertIn(needle, chat)
         page = flow.render_day_html(self.s, NY)
-        for needle in ("What&rsquo;s piling up", "Pregame", "The oldest unplayed episode in your queue"):
+        for needle in ("What&rsquo;s piling up", "Pregame", "The queue over your day"):
             self.assertIn(needle, page)
         for gone in ("added up across today", "start of day to now", "how old your oldest",
                      "new episodes that landed", "estimated"):
@@ -786,30 +775,23 @@ class ChartAndProgressTests(unittest.TestCase):
         self.assertEqual(flow.snapshot_from_run(d, "pulse")["in_progress"][0]["pct"], 75)
 
 
-class OldestEpisodeTests(unittest.TestCase):
-    def test_the_oldest_unplayed_episode_is_the_oldest_one_not_started(self):
-        d = {"queue": {"episodes": [
-            {"title": "Started Long Ago", "podcast": "A", "pubdate": "2026-10-01T07:00:00", "in_progress": True},
-            {"title": "Oldest Fresh", "podcast": "B", "pubdate": "2026-10-06T07:00:00", "in_progress": False,
-             "episode_url": "https://e/b", "artwork_url": "https://a/b.jpg"},
-            {"title": "Newer", "podcast": "C", "pubdate": "2026-10-12T07:00:00", "in_progress": False},
-        ]}}
-        ep = flow.oldest_episode_from_run(d)
-        self.assertEqual((ep["title"], ep["podcast"]), ("Oldest Fresh", "B"))
-        self.assertEqual(flow.snapshot_from_run(dict(minimal_run_json(), queue=dict(minimal_run_json()["queue"], episodes=d["queue"]["episodes"])), "pulse")["oldest_episode"]["title"], "Oldest Fresh")
-
-    def test_the_card_shows_the_episode_with_artwork_links_and_date(self):
-        ep = {"title": "Oldest Fresh", "podcast": "B", "episode_url": "https://e/b", "podcast_url": "https://p/b",
-              "artwork_url": "https://a/b.jpg", "pubdate": "2026-10-06T07:00:00"}
-        block = flow.oldest_episode_html(ep, NY)
-        for needle in ('src="https://a/b.jpg"', 'href="https://e/b"', 'href="https://p/b"', "Tue, Oct 6 · "):
-            self.assertIn(needle, block)
-        self.assertEqual(flow.oldest_episode_html(None), "")
-
+class CardGridTests(unittest.TestCase):
     def test_cards_sit_in_an_equal_height_grid(self):
         grid = flow.card_grid(["<div>a</div>", "<div>b</div>"])
         self.assertIn("display:grid", grid)
         self.assertNotIn("<td", grid)
+        self.assertNotIn("grid-column", grid)
+
+    def test_an_odd_card_takes_the_whole_row(self):
+        grid = flow.card_grid(["<div>a</div>", "<div>b</div>", "<div>c</div>"])
+        self.assertIn('<div style="grid-column:1 / -1;"><div>c</div></div>', grid)
+
+    def test_the_page_has_three_cards_and_no_oldest_episode_card(self):
+        history = [snap("2026-10-16T09:00", "morning", 120), snap("2026-10-16T12:00", "manual", 118, played_seconds=600)]
+        page = flow.render_day_html(flow.summarize_day(history, datetime.date(2026, 10, 16), NY), NY)
+        for card in ("Finished", "Episodes in your queue", "New arrivals"):
+            self.assertIn(card, page)
+        self.assertNotIn("oldest unplayed episode", page.lower())
 
 
 class RenderTests(unittest.TestCase):
