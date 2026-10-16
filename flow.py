@@ -568,8 +568,6 @@ def pace_line(s):
 def vs_lines(s, tz=None):
     """Plain comparisons of listening with earlier days at the same point in the
     day, so a half-finished day is never held against a whole one."""
-    by = f"by {clock(s['cutoff_snap'], tz)}"
-    now = dur_n(s["listened_seconds"])
     lines = []
     y = s.get("yesterday_listened")
     if y is not None:
@@ -577,14 +575,14 @@ def vs_lines(s, tz=None):
         if round(diff):
             lines.append(("📈" if diff > 0 else "📉",
                           f"You've listened {dur_n(abs(diff))} {'more' if diff > 0 else 'less'} than yesterday "
-                          f"at this time: {now} vs {dur_n(y)} {by}"))
+                          f"at this time"))
         else:
-            lines.append(("📊", f"You're right on yesterday's pace: {now} vs {dur_n(y)} {by}"))
+            lines.append(("📊", "You're right on yesterday's pace"))
     avg, n = s.get("recent_average"), s.get("recent_days", 0)
     if avg is not None and n >= 2:
         diff = s["listened_seconds"] - avg
         lines.append(("📊", f"You're {dur_n(abs(diff))} {'above' if diff >= 0 else 'below'} your usual listening "
-                            f"at this time: {now} vs an average of {dur_n(avg)} {by} ({n} days)"))
+                            f"at this time"))
     return lines
 
 
