@@ -639,24 +639,24 @@ class WindowStoryTests(unittest.TestCase):
 
     def test_listening_that_shrinks_the_queue(self):
         text, tone, delta = flow.window_story(self.window(3, 9000, -3, 0, 122))
-        self.assertEqual(text, "Listened to 3 episodes (2 hrs 30 mins) · queue down 3 to 122")
+        self.assertEqual(text, "Listened to 3 episodes (2 hrs 30 mins) · the queue decreased by 3 episodes, from 125 to 122")
         self.assertEqual((tone, delta), ("better", -3))
 
     def test_listening_outpaced_by_arrivals(self):
         text, tone, delta = flow.window_story(self.window(1, 2400, 2, 3, 126))
-        self.assertEqual(text, "Listened to 1 episode (40 mins) · 3 episodes landed, so the queue grew 2 to 126")
+        self.assertEqual(text, "Listened to 1 episode (40 mins) · the queue increased by 2 episodes, from 124 to 126")
         self.assertEqual(tone, "worse")
 
     def test_arrivals_keeping_pace(self):
         text, tone, _ = flow.window_story(self.window(2, 3000, 0, 2, 121))
-        self.assertEqual(text, "Listened to 2 episodes (50 mins) · new arrivals kept pace, queue steady at 121")
+        self.assertEqual(text, "Listened to 2 episodes (50 mins) · the queue stayed at 121")
         self.assertEqual(tone, "same")
 
     def test_a_quiet_window(self):
         text, tone, _ = flow.window_story(self.window(0, 0, 0, 0, 121))
-        self.assertEqual(text, "Nothing played · queue steady at 121")
+        self.assertEqual(text, "Nothing played · the queue stayed at 121")
         text, tone, _ = flow.window_story(self.window(0, 0, 3, 3, 124))
-        self.assertEqual(text, "Nothing played · 3 episodes landed, so the queue grew 3 to 124")
+        self.assertEqual(text, "Nothing played · the queue increased by 3 episodes, from 121 to 124")
 
     def test_timeline_shows_the_window_the_artwork_and_the_dash_in_words(self):
         history = [
@@ -670,7 +670,7 @@ class WindowStoryTests(unittest.TestCase):
         page = flow.render_day_html(s, NY)
         self.assertIn("4:00\u20136:00pm", page)
         self.assertIn("8:00\u201310:00am", page)
-        self.assertIn("Listened to 3 episodes (2 hrs 30 mins) · queue down 3 to 117", page)
+        self.assertIn("Listened to 3 episodes (2 hrs 30 mins) · the queue decreased by 3 episodes, from 120 to 117", page)
         self.assertIn('src="https://a/1.jpg"', page)
         self.assertIn('href="https://e/1"', page)
         self.assertIn("you listened to 3 episodes (2 hrs 30 mins), the queue got 2 hrs 46 mins shorter, and your oldest episode improved by 11 hrs 6 mins", page)

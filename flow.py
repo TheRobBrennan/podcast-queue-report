@@ -550,15 +550,11 @@ def window_story(w):
     qd, arr = w["queue_delta"], w.get("arrivals_count") or 0
     head = f"Listened to {episodes_phrase(n)} ({dur_n(played)})" if played > 0 else "Nothing played"
     if qd < 0:
-        tail, tone = f"queue down {abs(qd)} to {q}", "better"
+        tail, tone = f"the queue decreased by {episodes_phrase(abs(qd))}, from {q - qd} to {q}", "better"
     elif qd > 0:
-        tail = (f"{episodes_phrase(arr)} landed, so the queue grew {qd} to {q}" if arr
-                else f"queue up {qd} to {q}")
-        tone = "worse"
+        tail, tone = f"the queue increased by {episodes_phrase(qd)}, from {q - qd} to {q}", "worse"
     else:
-        tail = (f"new arrivals kept pace, queue steady at {q}" if played > 0 and arr
-                else f"queue steady at {q}")
-        tone = "same"
+        tail, tone = f"the queue stayed at {q}", "same"
     return f"{head} · {tail}", tone, qd
 
 
