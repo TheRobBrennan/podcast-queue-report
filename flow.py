@@ -491,7 +491,7 @@ def render_day_chat(s, tz=None):
         f"Listened: {dur(s['listened_seconds'])} · {s['listened_count']} episodes played",
         f"Queue: {qs['queue_count']} → {qe['queue_count']} episodes ({signed(s['queue_seconds_delta'])})",
         f"Behind: {dur(qs['behind_seconds'])} → {dur(qe['behind_seconds'])} ({behind_phrase(s['behind_delta'])})",
-        f"New arrivals (estimated): {dur(s['arrivals_seconds'])}",
+        f"New arrivals: {dur(s['arrivals_seconds'])}",
     ]
     for icon, line in highlights(s, tz):
         lines.append(f"{icon} {line}")
@@ -536,7 +536,7 @@ def render_week_chat(w, tz=None):
         f"Best day: {pretty_day(best['day'])}, {dur(best['listened_seconds'])}",
         f"Queue: {w['queue_start']['queue_count']} → {w['queue_end']['queue_count']} episodes, "
         f"behind {behind_phrase(w['behind_delta'])}",
-        f"New arrivals (estimated): {dur(w['arrivals_seconds'])}",
+        f"New arrivals: {dur(w['arrivals_seconds'])}",
         "",
     ]
     for d in w["days"]:
@@ -547,18 +547,61 @@ def render_week_chat(w, tz=None):
     return "\n".join(lines)
 
 
-def _card(label, value, sub="", hint=""):
+def _card(label, value, sub="", hint="", value_html=None):
     hint_html = (f'<div style="font-size:11px;color:#94a3b8;margin-top:8px;">{html.escape(hint)}</div>'
                  if hint else "")
+    sub_html = (f'<div style="font-size:13px;color:#64748b;margin-top:6px;">{html.escape(sub)}</div>'
+                if sub else "")
+    value_part = value_html if value_html is not None else html.escape(value)
     return (
         '<td width="50%" valign="top" style="padding:0 8px 16px 0;">'
         '<div style="background:#ffffff;border-radius:12px;padding:20px;'
         'box-shadow:0 1px 3px rgba(0,0,0,0.08);">'
         f'<div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#94a3b8;'
         f'letter-spacing:0.6px;margin-bottom:8px;">{html.escape(label)}</div>'
-        f'<div style="font-size:22px;font-weight:700;line-height:1.2;">{html.escape(value)}</div>'
-        f'<div style="font-size:13px;color:#64748b;margin-top:6px;">{html.escape(sub)}</div>'
-        f'{hint_html}'
+        f'<div style="font-size:22px;font-weight:700;line-height:1.2;">{value_part}</div>'
+        f'{sub_html}{hint_html}'
+        '</div></td>'
+    )
+
+
+def keycaps(n):
+    """121 -> 1️⃣2️⃣1️⃣"""
+    return "".join(f"{ch}\ufe0f\u20e3" for ch in str(int(n)))
+
+
+QUEUE_TONES = {
+    "better": ("#dcfce7", "#15803d", "\u25bc"),
+    "same": ("#fef9c3", "#a16207", "\u25ac"),
+    "worse": ("#fee2e2", "#b91c1c", "\u25b2"),
+}
+
+
+def queue_tone(start_count, end_count):
+    return "better" if end_count < start_count else ("worse" if end_count > start_count else "same")
+
+
+def queue_card(qs, qe, tz=None):
+    """The queue as its count in big keycap digits on green (shorter than when
+    the day started), yellow (the same), or red (longer)."""
+    tone = queue_tone(qs["queue_count"], qe["queue_count"])
+    bg, fg, arrow = QUEUE_TONES[tone]
+    delta = qe["queue_count"] - qs["queue_count"]
+    since = f"since {clock(qs, tz)}"
+    sub = {"better": f"{arrow} down {abs(delta)} {since}",
+           "same": f"{arrow} same as at {clock(qs, tz)}",
+           "worse": f"{arrow} up {delta} {since}"}[tone]
+    value_html = (f'<span style="display:inline-block;background:{bg};border-radius:12px;'
+                  f'padding:6px 14px;font-size:30px;line-height:1.15;letter-spacing:2px;">'
+                  f'{keycaps(qe["queue_count"])}</span>')
+    sub_html = f'<span style="color:{fg};font-weight:600;">{html.escape(sub)}</span>'
+    return (
+        '<td width="50%" valign="top" style="padding:0 8px 16px 0;">'
+        '<div style="background:#ffffff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">'
+        '<div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#94a3b8;'
+        'letter-spacing:0.6px;margin-bottom:8px;">Episodes in your queue</div>'
+        f'<div>{value_html}</div>'
+        f'<div style="font-size:13px;margin-top:10px;">{sub_html}</div>'
         '</div></td>'
     )
 
@@ -709,15 +752,11 @@ def render_day_html(s, tz=None, generated=None, d=None):
         return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
     qs, qe = s["queue_start"], s["queue_end"]
     cards = [
-        _card("Listened", dur(s["listened_seconds"]), f"{s['listened_count']} episodes played",
-              "what you played, added up across today's readings"),
-        _card("Queue", f"{qs['queue_count']} → {qe['queue_count']} episodes", signed(s["queue_seconds_delta"]),
-              "unplayed episodes, start of day to now"),
-        _card("Behind", dur(qe["behind_seconds"]),
-              f"from {dur(qs['behind_seconds'])}, {behind_phrase(s['behind_delta'])}",
-              "how old your oldest unplayed episode is"),
-        _card("New arrivals", dur(s["arrivals_seconds"]), "estimated",
-              "new episodes that landed in the queue"),
+        _card("Listened", dur(s["listened_seconds"]), f"{s['listened_count']} episodes played"),
+        queue_card(qs, qe, tz),
+        _card("The oldest unplayed episode in your queue", f"{dur(qe['behind_seconds'])} old",
+              f"{behind_phrase(s['behind_delta'])} since {clock(qs, tz)}"),
+        _card("New arrivals", dur(s["arrivals_seconds"])),
     ]
     rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))
     parts = [f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">{rows}</table>']
@@ -749,7 +788,7 @@ def render_week_html(w, tz=None, generated=None, d=None):
         _card("Best day", dur(best["listened_seconds"]), pretty_day(best["day"])),
         _card("Queue", f"{w['queue_start']['queue_count']} → {w['queue_end']['queue_count']} episodes",
               f"behind {behind_phrase(w['behind_delta'])}"),
-        _card("New arrivals", dur(w["arrivals_seconds"]), "estimated"),
+        _card("New arrivals", dur(w["arrivals_seconds"])),
     ]
     rows = "".join(
         f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2)
@@ -799,7 +838,7 @@ def build_discord_day(s, generated=None, tz=None):
                f"{qs['queue_count']} \u2192 {qe['queue_count']} episodes\n{signed(s['queue_seconds_delta'])}"),
         _field("__\u23f3 Behind__",
                f"{rr.wrap_duration(dur(qe['behind_seconds']))}\n{behind_phrase(s['behind_delta'])}"),
-        _field("__\U0001f4ec New arrivals__", f"{rr.wrap_duration(dur(s['arrivals_seconds']))}\nestimated"),
+        _field("__\U0001f4ec New arrivals__", f"{rr.wrap_duration(dur(s['arrivals_seconds']))}"),
     ]
     hl = highlights(s, tz)
     if hl:
@@ -840,7 +879,7 @@ def build_discord_week(w, generated=None, tz=None):
         _field("__\U0001f3c6 Best day__", f"{pretty_day(best['day'])}\n{dur_n(best['listened_seconds'], 3)}"),
         _field("__\U0001f4e5 Queue__",
                f"{w['queue_start']['queue_count']} \u2192 {w['queue_end']['queue_count']} episodes\nbehind {behind_phrase(w['behind_delta'])}"),
-        _field("__\U0001f4ec New arrivals__", f"{rr.wrap_duration(dur(w['arrivals_seconds']))}\nestimated"),
+        _field("__\U0001f4ec New arrivals__", f"{rr.wrap_duration(dur(w['arrivals_seconds']))}"),
         _field("__\U0001f4c6 By day__", "\n".join(
             f"`{d['day'].strftime('%a %b %-d'):<8}` {dur_n(d['listened_seconds'])} \u00b7 {d['queue_end']['queue_count']} eps"
             for d in w["days"])[:1000], inline=False),

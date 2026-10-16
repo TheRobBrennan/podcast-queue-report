@@ -296,6 +296,20 @@ class StoryTests(unittest.TestCase):
         self.assertIn("Quiet stretch mid-Dash", text)
         self.assertNotIn("Nap time", text)
 
+    def test_keycaps_spell_the_count(self):
+        self.assertEqual(flow.keycaps(121), "1\ufe0f\u20e32\ufe0f\u20e31\ufe0f\u20e3")
+
+    def test_queue_card_is_green_yellow_or_red(self):
+        def card(start, end):
+            return flow.queue_card(snap("2026-10-16T09:00", queue_count=start),
+                                   snap("2026-10-16T18:00", queue_count=end), NY)
+        self.assertIn("#dcfce7", card(124, 121))
+        self.assertIn("down 3 since 9:00am", card(124, 121))
+        self.assertIn("#fef9c3", card(121, 121))
+        self.assertIn("same as at 9:00am", card(121, 121))
+        self.assertIn("#fee2e2", card(121, 124))
+        self.assertIn("up 3 since 9:00am", card(121, 124))
+
     def test_labels_have_names_and_approximate_ones_are_marked(self):
         self.assertEqual(flow.label_name({"label": "dash-end"}), "🏁 Dash end")
         self.assertEqual(flow.label_name({"label": "manual"}), "📸 Check-in")
@@ -306,8 +320,11 @@ class StoryTests(unittest.TestCase):
         for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest listening stretch", "Clear all of"):
             self.assertIn(needle, chat)
         page = flow.render_day_html(self.s, NY)
-        for needle in ("What&rsquo;s piling up", "Pregame", "how old your oldest unplayed episode is"):
+        for needle in ("What&rsquo;s piling up", "Pregame", "The oldest unplayed episode in your queue"):
             self.assertIn(needle, page)
+        for gone in ("added up across today", "start of day to now", "how old your oldest",
+                     "new episodes that landed", "estimated"):
+            self.assertNotIn(gone, page)
 
 
 class GeneratedAndQueueTests(unittest.TestCase):
