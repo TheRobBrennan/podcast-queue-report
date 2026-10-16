@@ -387,7 +387,7 @@ class StoryTests(unittest.TestCase):
         ]
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
         self.assertEqual((s["listened_seconds"], s["listened_count"]), (7200, 3))
-        self.assertEqual(flow.window_sentence(s["windows"][0]), "First reading of the day · 120 episodes in the queue")
+        self.assertEqual(flow.window_sentence(s["windows"][0]), "☀️ 120 episodes in the queue")
         self.assertEqual(s["biggest_listen"]["snap"]["label"], "manual")
 
     def test_every_card_says_since_the_same_time(self):

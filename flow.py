@@ -580,7 +580,7 @@ def window_story(w):
     sn = w["snap"]
     q = sn["queue_count"]
     if w.get("first"):
-        return f"First reading of the day · {episodes_phrase(q)} in the queue", None, None
+        return f"☀️ {episodes_phrase(q)} in the queue", None, None
     played, n = w["played"], sn["played_count"]
     qd, arr = w["queue_delta"], w.get("arrivals_count") or 0
     if played > 0:
