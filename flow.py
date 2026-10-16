@@ -588,9 +588,9 @@ def queue_card(qs, qe, tz=None):
     bg, fg, arrow = QUEUE_TONES[tone]
     delta = qe["queue_count"] - qs["queue_count"]
     since = f"since {clock(qs, tz)}"
-    sub = {"better": f"{arrow} down {abs(delta)} {since}",
+    sub = {"better": f"{arrow} {abs(delta)} {since}",
            "same": f"{arrow} same as at {clock(qs, tz)}",
-           "worse": f"{arrow} up {delta} {since}"}[tone]
+           "worse": f"{arrow} {delta} {since}"}[tone]
     value_html = (f'<span style="display:inline-block;background:{bg};border-radius:12px;'
                   f'padding:6px 14px;font-size:30px;line-height:1.15;letter-spacing:2px;">'
                   f'{keycaps(qe["queue_count"])}</span>')

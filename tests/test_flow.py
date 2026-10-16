@@ -304,11 +304,11 @@ class StoryTests(unittest.TestCase):
             return flow.queue_card(snap("2026-10-16T09:00", queue_count=start),
                                    snap("2026-10-16T18:00", queue_count=end), NY)
         self.assertIn("#dcfce7", card(124, 121))
-        self.assertIn("down 3 since 9:00am", card(124, 121))
+        self.assertIn("▼ 3 since 9:00am", card(124, 121))
         self.assertIn("#fef9c3", card(121, 121))
         self.assertIn("same as at 9:00am", card(121, 121))
         self.assertIn("#fee2e2", card(121, 124))
-        self.assertIn("up 3 since 9:00am", card(121, 124))
+        self.assertIn("▲ 3 since 9:00am", card(121, 124))
 
     def test_labels_have_names_and_approximate_ones_are_marked(self):
         self.assertEqual(flow.label_name({"label": "dash-end"}), "🏁 Dash end")
