@@ -633,8 +633,8 @@ class WindowStoryTests(unittest.TestCase):
                    with_np("2026-10-16T11:00", 100), with_np("2026-10-16T12:00", 110)]
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
         stories = [flow.window_story(w)[0] for w in s["windows"][1:]]
-        self.assertEqual(stories[0], "Kept listening: moved ahead 6 mins 40 seconds in the current episode (20% → 60%) · the queue stayed at 121")
-        self.assertEqual(stories[1], "Replayed: went back 8 mins 20 seconds in the current episode (60% → 10%) · the queue stayed at 121")
+        self.assertEqual(stories[0], "Kept listening: moved ahead 6 mins 40 seconds in the current episode (20% → 60%). The queue stayed at 121 episodes")
+        self.assertEqual(stories[1], "Replayed: went back 8 mins 20 seconds in the current episode (60% → 10%). The queue stayed at 121 episodes")
         self.assertTrue(stories[2].startswith("No episodes finished"))  # moved 10 seconds: not worth a sentence
 
     def test_artwork_for_an_episode_is_borrowed_from_a_later_reading(self):
@@ -669,24 +669,24 @@ class WindowStoryTests(unittest.TestCase):
 
     def test_listening_that_shrinks_the_queue(self):
         text, tone, delta = flow.window_story(self.window(3, 9000, -3, 0, 122))
-        self.assertEqual(text, "Listened to 3 episodes (2 hrs 30 mins) · the queue decreased by 3 episodes, from 125 to 122")
+        self.assertEqual(text, "Listened to 3 episodes (2 hrs 30 mins). The queue decreased from 125 to 122 episodes")
         self.assertEqual((tone, delta), ("better", -3))
 
     def test_listening_outpaced_by_arrivals(self):
         text, tone, delta = flow.window_story(self.window(1, 2400, 2, 3, 126))
-        self.assertEqual(text, "Listened to 1 episode (40 mins) · the queue increased by 2 episodes, from 124 to 126")
+        self.assertEqual(text, "Listened to 1 episode (40 mins). The queue increased from 124 to 126 episodes")
         self.assertEqual(tone, "worse")
 
     def test_arrivals_keeping_pace(self):
         text, tone, _ = flow.window_story(self.window(2, 3000, 0, 2, 121))
-        self.assertEqual(text, "Listened to 2 episodes (50 mins) · the queue stayed at 121")
+        self.assertEqual(text, "Listened to 2 episodes (50 mins). The queue stayed at 121 episodes")
         self.assertEqual(tone, "same")
 
     def test_a_quiet_window(self):
         text, tone, _ = flow.window_story(self.window(0, 0, 0, 0, 121))
-        self.assertEqual(text, "No episodes finished · the queue stayed at 121")
+        self.assertEqual(text, "No episodes finished. The queue stayed at 121 episodes")
         text, tone, _ = flow.window_story(self.window(0, 0, 3, 3, 124))
-        self.assertEqual(text, "No episodes finished · the queue increased by 3 episodes, from 121 to 124")
+        self.assertEqual(text, "No episodes finished. The queue increased from 121 to 124 episodes")
 
     def test_timeline_shows_the_window_the_artwork_and_the_dash_in_words(self):
         history = [
@@ -700,7 +700,7 @@ class WindowStoryTests(unittest.TestCase):
         page = flow.render_day_html(s, NY)
         self.assertIn("4:00\u20136:00pm", page)
         self.assertIn("8:00\u201310:00am", page)
-        self.assertIn("Listened to 3 episodes (2 hrs 30 mins) · the queue decreased by 3 episodes, from 120 to 117", page)
+        self.assertIn("Listened to 3 episodes (2 hrs 30 mins). The queue decreased from 120 to 117 episodes", page)
         self.assertIn('src="https://a/1.jpg"', page)
         self.assertIn('href="https://e/1"', page)
         self.assertIn("you listened to 3 episodes (2 hrs 30 mins), the queue got 2 hrs 46 mins shorter, and your oldest episode improved by 11 hrs 6 mins", page)

@@ -590,12 +590,12 @@ def window_story(w):
                     if pr["delta"] > 0 else
                     f"Replayed: went back {dur_n(abs(pr['delta']))} in the current episode{span}")
     if qd < 0:
-        tail, tone = f"the queue decreased by {episodes_phrase(abs(qd))}, from {q - qd} to {q}", "better"
+        tail, tone = f"The queue decreased from {q - qd} to {q} episodes", "better"
     elif qd > 0:
-        tail, tone = f"the queue increased by {episodes_phrase(qd)}, from {q - qd} to {q}", "worse"
+        tail, tone = f"The queue increased from {q - qd} to {q} episodes", "worse"
     else:
-        tail, tone = f"the queue stayed at {q}", "same"
-    return f"{head} · {tail}", tone, qd
+        tail, tone = f"The queue stayed at {q} episodes", "same"
+    return f"{head}. {tail}", tone, qd
 
 
 def window_sentence(w):
