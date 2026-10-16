@@ -553,11 +553,14 @@ def render_week_chat(w, tz=None):
     return "\n".join(lines)
 
 
-def _card(label, value, sub="", hint="", value_html=None):
+def _card(label, value, sub="", hint="", value_html=None, sub_html=None):
     hint_html = (f'<div style="font-size:11px;color:#94a3b8;margin-top:8px;">{html.escape(hint)}</div>'
                  if hint else "")
-    sub_html = (f'<div style="font-size:13px;color:#64748b;margin-top:6px;">{html.escape(sub)}</div>'
-                if sub else "")
+    if sub_html is not None:
+        sub_html = f'<div style="font-size:13px;margin-top:6px;">{sub_html}</div>'
+    else:
+        sub_html = (f'<div style="font-size:13px;color:#64748b;margin-top:6px;">{html.escape(sub)}</div>'
+                    if sub else "")
     value_part = value_html if value_html is not None else html.escape(value)
     return (
         '<td width="50%" valign="top" style="padding:0 8px 16px 0;">'
@@ -590,6 +593,18 @@ def queue_tone(start_count, end_count):
 def since_label(snap, tz=None):
     """"since 6:06am EDT" - the one starting point every card on the page uses."""
     return f"since {clock(snap, tz)} {local_dt(snap, tz).strftime('%Z')}"
+
+
+def age_line(delta, since):
+    """The oldest-episode change, colored like the queue card: green when the
+    oldest unplayed episode is newer than at the start, yellow when unchanged,
+    red when it has slipped further behind."""
+    tone = "better" if round(delta) < 0 else ("worse" if round(delta) > 0 else "same")
+    _, fg, arrow = QUEUE_TONES[tone]
+    text = {"better": f"{arrow} Improved {dur_n(delta)} {since}",
+            "same": f"{arrow} No change {since}",
+            "worse": f"{arrow} Slipped {dur_n(delta)} {since}"}[tone]
+    return f'<span style="color:{fg};font-weight:600;">{html.escape(text)}</span>'
 
 
 def queue_card(qs, qe, tz=None):
@@ -769,9 +784,7 @@ def render_day_html(s, tz=None, generated=None, d=None):
               f"{s['listened_count']} episode{'' if s['listened_count'] == 1 else 's'} played {since_label(qs, tz)}"),
         queue_card(qs, qe, tz),
         _card("The oldest unplayed episode in your queue", f"{dur(qe['behind_seconds'])} old",
-              ("No change " if round(s["behind_delta"]) == 0 else
-               f"{'Improved' if s['behind_delta'] < 0 else 'Slipped'} {dur_n(s['behind_delta'])} ")
-              + since_label(qs, tz)),
+              sub_html=age_line(s["behind_delta"], since_label(qs, tz))),
         _card("New arrivals", dur(s["arrivals_seconds"])),
     ]
     rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))

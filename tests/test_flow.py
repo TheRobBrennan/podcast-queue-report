@@ -334,6 +334,17 @@ class StoryTests(unittest.TestCase):
         self.assertEqual(page.count("since 9:00am EDT"), 3)
         self.assertIn("episodes played since 9:00am EDT", page)
 
+    def test_oldest_episode_line_is_green_yellow_or_red_like_the_queue(self):
+        since = "since 9:00am EDT"
+        better = flow.age_line(-18000, since)
+        self.assertIn("#15803d", better)
+        self.assertIn("▼ Improved 5 hrs", better)
+        self.assertIn("#a16207", flow.age_line(0, since))
+        self.assertIn("▬ No change", flow.age_line(0, since))
+        worse = flow.age_line(7200, since)
+        self.assertIn("#b91c1c", worse)
+        self.assertIn("▲ Slipped 2 hrs", worse)
+
     def test_labels_have_names_and_approximate_ones_are_marked(self):
         self.assertEqual(flow.label_name({"label": "dash-end"}), "🏁 Dash end")
         self.assertEqual(flow.label_name({"label": "manual"}), "📸 Check-in")
