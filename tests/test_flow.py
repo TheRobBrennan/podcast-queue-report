@@ -345,6 +345,13 @@ class StoryTests(unittest.TestCase):
         self.assertIn("#b91c1c", worse)
         self.assertIn("▲ Slipped 2 hrs", worse)
 
+    def test_long_card_values_shrink_instead_of_wrapping(self):
+        short = flow.fit_value("6 hrs 21 mins")
+        long = flow.fit_value("1 week 2 days 10 hrs 48 mins old")
+        self.assertIn("font-size:22px", short)
+        self.assertIn("white-space:nowrap", long)
+        self.assertNotIn("font-size:22px", long)
+
     def test_labels_have_names_and_approximate_ones_are_marked(self):
         self.assertEqual(flow.label_name({"label": "dash-end"}), "🏁 Dash end")
         self.assertEqual(flow.label_name({"label": "manual"}), "📸 Check-in")

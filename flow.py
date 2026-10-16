@@ -553,6 +553,14 @@ def render_week_chat(w, tz=None):
     return "\n".join(lines)
 
 
+def fit_value(text):
+    """A card's big number on one line: shrink the type for long values
+    rather than letting them wrap."""
+    n = len(text)
+    size = 22 if n <= 25 else 19 if n <= 31 else 17 if n <= 36 else 15
+    return (f'<span style="font-size:{size}px;white-space:nowrap;">{html.escape(text)}</span>')
+
+
 def _card(label, value, sub="", hint="", value_html=None, sub_html=None):
     hint_html = (f'<div style="font-size:11px;color:#94a3b8;margin-top:8px;">{html.escape(hint)}</div>'
                  if hint else "")
@@ -561,7 +569,7 @@ def _card(label, value, sub="", hint="", value_html=None, sub_html=None):
     else:
         sub_html = (f'<div style="font-size:13px;color:#64748b;margin-top:6px;">{html.escape(sub)}</div>'
                     if sub else "")
-    value_part = value_html if value_html is not None else html.escape(value)
+    value_part = value_html if value_html is not None else fit_value(value)
     return (
         '<td width="50%" valign="top" style="padding:0 8px 16px 0;">'
         '<div style="background:#ffffff;border-radius:12px;padding:20px;'
@@ -783,7 +791,7 @@ def render_day_html(s, tz=None, generated=None, d=None):
         _card("Listened", dur(s["listened_seconds"]),
               f"{s['listened_count']} episode{'' if s['listened_count'] == 1 else 's'} played {since_label(qs, tz)}"),
         queue_card(qs, qe, tz),
-        _card("The oldest unplayed episode in your queue", f"{dur(qe['behind_seconds'])} old",
+        _card("The oldest unplayed episode in your queue", f"{dur_n(qe['behind_seconds'], 4)} old",
               sub_html=age_line(s["behind_delta"], since_label(qs, tz))),
         _card("New arrivals", dur(s["arrivals_seconds"])),
     ]
