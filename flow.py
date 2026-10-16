@@ -45,6 +45,14 @@ HISTORY_PATH = os.environ.get(
 )
 RUN_JSON = os.environ.get("RUN_JSON", "/tmp/podcast_run.json")
 LABELS = ("morning", "dash-start", "dash-end", "evening", "manual")
+LABEL_NAMES = {
+    "morning": ("☀️", "Morning"),
+    "dash-start": ("🚐", "Dash start"),
+    "dash-end": ("🏁", "Dash end"),
+    "evening": ("🌙", "Evening"),
+    "manual": ("📸", "Check-in"),
+}
+_UNIT_SECONDS = {"week": 604800, "day": 86400, "hr": 3600, "min": 60, "second": 1}
 
 DAY_STARTS_HOUR = 4
 MORNING_FALLBACK_HOUR = 11
@@ -65,10 +73,31 @@ def parse_utc(iso):
     return dt
 
 
+def parse_fmt_seconds(text):
+    """Seconds from podcast_summary.fmt_duration text, e.g. '1 hr 4 mins 5 seconds'."""
+    total = 0
+    for num, unit in re.findall(r"(\d[\d,]*)\s*(week|day|hr|min|second)", (text or "").replace("\xa0", " ")):
+        total += int(num.replace(",", "")) * _UNIT_SECONDS[unit]
+    return total
+
+
+def queue_by_show(d, top=6):
+    """The queue grouped by show: how many episodes and how much listening each holds."""
+    shows = {}
+    for e in d["queue"].get("episodes", []):
+        row = shows.setdefault(e.get("podcast") or "Unknown", {"podcast": e.get("podcast") or "Unknown",
+                                                              "count": 0, "seconds": 0})
+        row["count"] += 1
+        row["seconds"] += parse_fmt_seconds(e.get("duration_fmt"))
+    ranked = sorted(shows.values(), key=lambda r: (-r["count"], -r["seconds"]))
+    return ranked[:top]
+
+
 def snapshot_from_run(d, label, source="live"):
     q = d["queue"]
     since = d["played"]["since_last_run"]
-    return {
+    np = d.get("now_playing") or None
+    snap = {
         "ts": d["generated_at"],
         "since": d.get("last_run_iso") or d["generated_at"],
         "label": label,
@@ -80,6 +109,12 @@ def snapshot_from_run(d, label, source="live"):
         "played_count": int(since["count"]),
         "played_seconds": int(round(since["total_seconds"])),
     }
+    if np:
+        snap["now_playing"] = {"title": np.get("title"), "podcast": np.get("podcast")}
+    shows = queue_by_show(d)
+    if shows:
+        snap["by_show"] = shows
+    return snap
 
 
 def append_snapshot(snap, path=None):
@@ -173,7 +208,40 @@ def summarize_day(history, day, tz=None):
         else:
             run_start = None
     out["drought"] = best
+
+    prev = None
+    windows = []
+    for sn in snaps:
+        windows.append({
+            "snap": sn,
+            "played": sn["played_seconds"],
+            "arrivals": arrivals_seconds(prev, sn) if prev else None,
+            "queue_delta": (sn["queue_count"] - prev["queue_count"]) if prev else None,
+        })
+        prev = sn
+    out["windows"] = windows
+    heard = [w for w in windows if w["played"] > 0]
+    out["biggest_listen"] = max(heard, key=lambda w: w["played"]) if heard else None
+    landed = [w for w in windows if w["arrivals"]]
+    out["biggest_arrival"] = max(landed, key=lambda w: w["arrivals"]) if landed else None
+    out["closed"] = any(sn["label"] == "evening" for sn in snaps)
+    out["yesterday_listened"], out["recent_average"] = day_context(history, day, tz)
+    shows = [sn for sn in snaps if sn.get("by_show")]
+    out["by_show_snapshot"] = shows[-1] if shows else None
+    playing = [sn for sn in snaps if sn.get("now_playing")]
+    out["now_playing"] = playing[-1]["now_playing"] if playing else None
     return out
+
+
+def day_context(history, day, tz=None):
+    """(yesterday's listening, average listening over the 7 days before), each
+    None when there is no data for it."""
+    def listened(d):
+        snaps = day_snapshots(history, d, tz)
+        return sum(s["played_seconds"] for s in snaps) if snaps else None
+    yesterday = listened(day - datetime.timedelta(days=1))
+    prior = [x for x in (listened(day - datetime.timedelta(days=i)) for i in range(1, 8)) if x is not None]
+    return yesterday, (sum(prior) / len(prior) if prior else None)
 
 
 def week_days(anchor_day):
@@ -282,41 +350,111 @@ def emoji_row_html():
     )
 
 
+def label_name(snap):
+    icon, name = LABEL_NAMES.get(snap["label"], ("📸", "Check-in"))
+    return f"{icon} {name}" + (" ≈" if snap.get("approx") else "")
+
+
+def window_sentence(w):
+    sn = w["snap"]
+    bits = [f"Listened {dur_n(w['played'])}" if w["played"] > 0 else "Nothing played"]
+    qd = w["queue_delta"]
+    if qd is None:
+        bits.append(f"queue {sn['queue_count']}")
+    elif qd == 0:
+        bits.append(f"queue steady at {sn['queue_count']}")
+    else:
+        bits.append(f"queue {sn['queue_count']} ({qd:+d})")
+    return " · ".join(bits)
+
+
+def vs_lines(s):
+    """Plain comparisons: against yesterday and against the recent average."""
+    so_far = "" if s["closed"] else " so far"
+    lines = []
+    y = s.get("yesterday_listened")
+    if y is not None:
+        diff = s["listened_seconds"] - y
+        lines.append(("📈" if diff >= 0 else "📉",
+                      f"{dur_n(abs(diff))} {'more' if diff >= 0 else 'less'} than yesterday{so_far}"
+                      if round(diff) else f"Same as yesterday{so_far}"))
+    avg = s.get("recent_average")
+    if avg is not None:
+        diff = s["listened_seconds"] - avg
+        lines.append(("📊", f"{dur_n(abs(diff))} {'above' if diff >= 0 else 'below'} your recent average of "
+                            f"{dur_n(avg)} a day{so_far}"))
+    return lines
+
+
+def highlights(s, tz=None):
+    """(icon, sentence) pairs worth a glance."""
+    out = []
+    b = s.get("biggest_listen")
+    if b:
+        out.append(("🏅", f"Biggest listening stretch: {dur_n(b['played'])}, ending at {clock(b['snap'], tz)}"))
+    a = s.get("biggest_arrival")
+    if a and a["arrivals"] >= 1800:
+        out.append(("📬", f"Biggest arrival burst: about {dur_n(a['arrivals'])} of new episodes by {clock(a['snap'], tz)}"))
+    if s["drought"] and s["drought"][0] >= 3 * 3600:
+        span, x, y = s["drought"]
+        mid_dash = any(d["start"]["ts"] < y and d["end"]["ts"] > x for d in s["dashes"])
+        out.append(("🤫" if mid_dash else "😴", f"{'Quiet stretch mid-Dash' if mid_dash else 'Nap time'}: {dur_n(span)} with nothing played, "
+                          f"{local_dt({'ts': x}, tz).strftime('%-I:%M%p').lower()} to "
+                          f"{local_dt({'ts': y}, tz).strftime('%-I:%M%p').lower()}"))
+    for icon, line in vs_lines(s):
+        out.append((icon, line))
+    return out
+
+
+def show_share(snap):
+    shows = snap.get("by_show") or []
+    total = snap["queue_count"] or 1
+    return [(r["podcast"], r["count"], 100.0 * r["count"] / total) for r in shows]
+
+
+def bar_chat(value, peak, width=10):
+    if peak <= 0 or value <= 0:
+        return "·" * 1
+    return "█" * max(1, round(width * value / peak))
+
+
 def render_day_chat(s, tz=None):
     if not s["snapshots"]:
         return f"🎧 Daily flow — {pretty_day(s['day'])}\nNo snapshots recorded."
     qs, qe = s["queue_start"], s["queue_end"]
-    n = len(s["snapshots"])
     lines = [
         ps.emoji_header(),
         day_headline(s),
         f"🎧 Daily flow — {pretty_day(s['day'])}",
-        f"Listened: {dur(s['listened_seconds'])} · {s['listened_count']} episodes played · {n} snapshots",
-        f"Queue: {qs['queue_count']} → {qe['queue_count']} episodes "
-        f"({signed(s['queue_seconds_delta'])})",
-        f"Behind: {dur(qs['behind_seconds'])} → {dur(qe['behind_seconds'])} "
-        f"({behind_phrase(s['behind_delta'])})",
+        f"Listened: {dur(s['listened_seconds'])} · {s['listened_count']} episodes played",
+        f"Queue: {qs['queue_count']} → {qe['queue_count']} episodes ({signed(s['queue_seconds_delta'])})",
+        f"Behind: {dur(qs['behind_seconds'])} → {dur(qe['behind_seconds'])} ({behind_phrase(s['behind_delta'])})",
         f"New arrivals (estimated): {dur(s['arrivals_seconds'])}",
     ]
+    for icon, line in highlights(s, tz):
+        lines.append(f"{icon} {line}")
     for dsh in s["dashes"]:
         lines.append(
             f"🚐 Dash {clock(dsh['start'], tz)}–{clock(dsh['end'], tz)}: "
             f"listened {dur(dsh['listened_seconds'])}, queue {signed(dsh['queue_seconds_delta'])}, "
             f"behind {behind_phrase(dsh['behind_delta'])}"
         )
-    if s["drought"] and s["drought"][0] >= 3 * 3600:
-        span, a, b = s["drought"]
-        lines.append(
-            f"Quietest stretch: {dur(span)}, "
-            f"{local_dt({'ts': a}, tz).strftime('%-I:%M%p').lower()}–"
-            f"{local_dt({'ts': b}, tz).strftime('%-I:%M%p').lower()}, nothing played"
-        )
+    snap = s.get("by_show_snapshot")
+    if snap:
+        lines.append("")
+        lines.append("What's piling up:")
+        for name, count, pct in show_share(snap)[:5]:
+            lines.append(f"  {count:>3} eps  {pct:>3.0f}%  {name}")
+    if s.get("now_playing"):
+        np = s["now_playing"]
+        lines.append(f"▶ Now playing: {np['title']} — {np['podcast']}")
     lines.append("")
-    for snap in s["snapshots"]:
-        lines.append(
-            f"{clock(snap, tz):>8}  {snap['label']:<10}  {snap['queue_count']} eps  "
-            f"{dur_n(snap['behind_seconds'], 3):<26} behind  played {dur_n(snap['played_seconds'])}"
-        )
+    peak = max([w["played"] for w in s["windows"]] + [1])
+    for w in s["windows"]:
+        sn = w["snap"]
+        lines.append(f"{clock(sn, tz):>8}  {label_name(sn):<14} {bar_chat(w['played'], peak):<10}  {window_sentence(w)}")
+    if any(w["snap"].get("approx") for w in s["windows"]):
+        lines.append("≈ labeled from the nearest scheduled reading")
     return "\n".join(lines)
 
 
@@ -345,7 +483,9 @@ def render_week_chat(w, tz=None):
     return "\n".join(lines)
 
 
-def _card(label, value, sub=""):
+def _card(label, value, sub="", hint=""):
+    hint_html = (f'<div style="font-size:11px;color:#94a3b8;margin-top:8px;">{html.escape(hint)}</div>'
+                 if hint else "")
     return (
         '<td width="50%" valign="top" style="padding:0 8px 16px 0;">'
         '<div style="background:#ffffff;border-radius:12px;padding:20px;'
@@ -354,6 +494,7 @@ def _card(label, value, sub=""):
         f'letter-spacing:0.6px;margin-bottom:8px;">{html.escape(label)}</div>'
         f'<div style="font-size:22px;font-weight:700;line-height:1.2;">{html.escape(value)}</div>'
         f'<div style="font-size:13px;color:#64748b;margin-top:6px;">{html.escape(sub)}</div>'
+        f'{hint_html}'
         '</div></td>'
     )
 
@@ -419,66 +560,111 @@ def _page(title, body, headline=None, generated=None, tz=None, queue_html=""):
 </div></body></html>"""
 
 
+def _white_card(inner, margin=16, extra=""):
+    return (f'<div style="background:#ffffff;border-radius:12px;padding:16px 20px;margin-bottom:{margin}px;'
+            f'box-shadow:0 1px 3px rgba(0,0,0,0.08);{extra}">{inner}</div>')
+
+
+def timeline_html(s, tz=None):
+    peak = max([w["played"] for w in s["windows"]] + [1])
+    in_dash = False
+    rows = ""
+    for w in s["windows"]:
+        sn = w["snap"]
+        shaded = in_dash or sn["label"] == "dash-end"
+        dash_style = "background:#f0f9ff;border-left:4px solid #38bdf8;" if shaded else "border-left:4px solid transparent;"
+        width = max(3, round(100 * w["played"] / peak)) if w["played"] > 0 else 0
+        bar = (f'<div style="height:10px;border-radius:5px;background:{"#38bdf8" if shaded else "#34d399"};width:{width}%;"></div>'
+               if width else '<div style="font-size:11px;color:#cbd5e1;">·</div>')
+        playing = ""
+        if sn.get("now_playing"):
+            np = sn["now_playing"]
+            playing = (f'<div style="font-size:12px;color:#047857;margin-top:3px;">▶ {html.escape(np.get("title") or "")}'
+                       f' — {html.escape(np.get("podcast") or "")}</div>')
+        rows += (
+            f'<tr style="{dash_style}">'
+            f'<td style="padding:10px 12px;white-space:nowrap;vertical-align:top;">'
+            f'<div style="font-weight:700;">{clock(sn, tz)}</div>'
+            f'<div style="font-size:12px;color:#64748b;">{html.escape(label_name(sn))}</div></td>'
+            f'<td style="padding:10px 12px;width:34%;vertical-align:middle;">{bar}</td>'
+            f'<td style="padding:10px 12px;font-size:13px;vertical-align:top;">{html.escape(window_sentence(w))}{playing}</td>'
+            '</tr>'
+        )
+        if sn["label"] == "dash-start":
+            in_dash = True  # the rows after the start are the Dash itself
+        if sn["label"] == "dash-end":
+            in_dash = False
+            for dsh in s["dashes"]:
+                if dsh["end"] is sn:
+                    rows += (
+                        '<tr style="background:#e0f2fe;border-left:4px solid #38bdf8;">'
+                        f'<td colspan="3" style="padding:8px 12px;font-size:13px;font-weight:600;color:#0369a1;">'
+                        f'🚐 Dash {clock(dsh["start"], tz)}–{clock(dsh["end"], tz)}: listened '
+                        f'{html.escape(dur_n(dsh["listened_seconds"]))}, queue {html.escape(signed(dsh["queue_seconds_delta"]))}, '
+                        f'behind {html.escape(behind_phrase(dsh["behind_delta"]))}</td></tr>'
+                    )
+    note = ('<div style="font-size:11px;color:#94a3b8;margin-top:8px;">≈ labeled from the nearest scheduled reading</div>'
+            if any(w["snap"].get("approx") for w in s["windows"]) else "")
+    return (
+        '<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
+        'margin:8px 0 10px;">The shape of your day</div>'
+        '<div style="background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.08);overflow:hidden;">'
+        f'<table width="100%" cellpadding="0" cellspacing="0">{rows}</table></div>{note}'
+    )
+
+
+def piling_up_html(s):
+    snap = s.get("by_show_snapshot")
+    if not snap:
+        return ""
+    peak = max([c for _, c, _ in show_share(snap)] + [1])
+    rows = ""
+    for name, count, pct in show_share(snap)[:5]:
+        rows += (
+            '<div style="display:flex;align-items:center;margin:6px 0;font-size:13px;">'
+            f'<div style="flex:0 0 46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{html.escape(name)}</div>'
+            f'<div style="flex:1;padding:0 10px;"><div style="height:10px;border-radius:5px;background:#a78bfa;'
+            f'width:{max(4, round(100 * count / peak))}%;"></div></div>'
+            f'<div style="flex:0 0 78px;text-align:right;color:#64748b;">{count} eps · {pct:.0f}%</div></div>'
+        )
+    return (
+        '<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
+        'margin:24px 0 10px;">What&rsquo;s piling up</div>'
+        + _white_card(rows, 16)
+    )
+
+
 def render_day_html(s, tz=None, generated=None, d=None):
     title = f"Daily flow — {pretty_day(s['day'])}"
     if not s["snapshots"]:
         return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
     qs, qe = s["queue_start"], s["queue_end"]
     cards = [
-        _card("Listened", dur(s["listened_seconds"]),
-              f"{s['listened_count']} episodes played"),
-        _card("Queue", f"{qs['queue_count']} → {qe['queue_count']} episodes",
-              signed(s["queue_seconds_delta"])),
+        _card("Listened", dur(s["listened_seconds"]), f"{s['listened_count']} episodes played",
+              "what you played, added up across today's readings"),
+        _card("Queue", f"{qs['queue_count']} → {qe['queue_count']} episodes", signed(s["queue_seconds_delta"]),
+              "unplayed episodes, start of day to now"),
         _card("Behind", dur(qe["behind_seconds"]),
-              f"from {dur(qs['behind_seconds'])}, {behind_phrase(s['behind_delta'])}"),
-        _card("New arrivals", dur(s["arrivals_seconds"]), "estimated"),
+              f"from {dur(qs['behind_seconds'])}, {behind_phrase(s['behind_delta'])}",
+              "how old your oldest unplayed episode is"),
+        _card("New arrivals", dur(s["arrivals_seconds"]), "estimated",
+              "new episodes that landed in the queue"),
     ]
-    rows = "".join(
-        f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2)
-    )
+    rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))
     parts = [f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">{rows}</table>']
-    if s["dashes"]:
-        items = ""
-        for dsh in s["dashes"]:
-            items += (
-                f"<div style=\"margin:6px 0;\">🚐 <b>{clock(dsh['start'], tz)}–{clock(dsh['end'], tz)}</b> "
-                f"listened {html.escape(dur(dsh['listened_seconds']))}, "
-                f"queue {html.escape(signed(dsh['queue_seconds_delta']))}, "
-                f"behind {html.escape(behind_phrase(dsh['behind_delta']))}</div>"
-            )
+    hl = highlights(s, tz)
+    if hl:
+        items = "".join(f'<div style="margin:6px 0;font-size:14px;">{icon} {html.escape(line)}</div>' for icon, line in hl)
+        parts.append(_white_card(items, 20))
+    if s.get("now_playing"):
+        np = s["now_playing"]
         parts.append(
-            '<div style="background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:16px;'
-            f'box-shadow:0 1px 3px rgba(0,0,0,0.08);"><div style="font-weight:700;">Dash windows</div>{items}</div>'
+            '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px 20px;'
+            f'margin-bottom:20px;font-size:14px;color:#047857;">▶ Now playing: <b>{html.escape(np.get("title") or "")}</b>'
+            f' — {html.escape(np.get("podcast") or "")}</div>'
         )
-    if s["drought"] and s["drought"][0] >= 3 * 3600:
-        span, a, b = s["drought"]
-        parts.append(
-            '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;'
-            'padding:14px 20px;margin-bottom:16px;font-size:14px;color:#92400e;">'
-            f"Quietest stretch: {html.escape(dur(span))}, "
-            f"{local_dt({'ts': a}, tz).strftime('%-I:%M%p').lower()}–"
-            f"{local_dt({'ts': b}, tz).strftime('%-I:%M%p').lower()}, nothing played</div>"
-        )
-    body_rows = ""
-    for snap in s["snapshots"]:
-        body_rows += (
-            "<tr>"
-            f"<td style='padding:8px 12px;'>{clock(snap, tz)}</td>"
-            f"<td style='padding:8px 12px;'>{html.escape(snap['label'])}</td>"
-            f"<td style='padding:8px 12px;'>{snap['queue_count']} eps</td>"
-            f"<td style='padding:8px 12px;'>{html.escape(dur_n(snap['behind_seconds'], 3))}</td>"
-            f"<td style='padding:8px 12px;'>{html.escape(dur_n(snap['played_seconds']))}</td>"
-            "</tr>"
-        )
-    parts.append(
-        '<table width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;'
-        'box-shadow:0 1px 3px rgba(0,0,0,0.08);font-size:13px;">'
-        '<tr style="text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:0.6px;">'
-        "<th style='padding:12px;'>Time</th><th style='padding:12px;'>Snapshot</th>"
-        "<th style='padding:12px;'>Queue</th><th style='padding:12px;'>Behind</th>"
-        "<th style='padding:12px;'>Played in window</th></tr>"
-        f"{body_rows}</table>"
-    )
+    parts.append(timeline_html(s, tz))
+    parts.append(piling_up_html(s))
     return _page(title, "".join(parts), day_headline(s), generated, tz,
                  queue_section_html(d) if d else "")
 
@@ -546,22 +732,28 @@ def build_discord_day(s, generated=None, tz=None):
                f"{rr.wrap_duration(dur(qe['behind_seconds']))}\n{behind_phrase(s['behind_delta'])}"),
         _field("__\U0001f4ec New arrivals__", f"{rr.wrap_duration(dur(s['arrivals_seconds']))}\nestimated"),
     ]
+    hl = highlights(s, tz)
+    if hl:
+        fields.append(_field("__\u2728 Highlights__", "\n".join(f"{i} {l}" for i, l in hl)[:1000], inline=False))
     for dsh in s["dashes"]:
         fields.append(_field(
             f"__\U0001f690 Dash {clock(dsh['start'], tz)}\u2013{clock(dsh['end'], tz)}__",
             f"listened {dur(dsh['listened_seconds'])}\nqueue {signed(dsh['queue_seconds_delta'])}\n"
             f"behind {behind_phrase(dsh['behind_delta'])}", inline=False))
-    if s["drought"] and s["drought"][0] >= 3 * 3600:
-        span, a, b = s["drought"]
-        fields.append(_field("__\U0001f634 Quietest stretch__",
-                             f"{dur(span)}, "
-                             f"{local_dt({'ts': a}, tz).strftime('%-I:%M%p').lower()}\u2013"
-                             f"{local_dt({'ts': b}, tz).strftime('%-I:%M%p').lower()}", inline=False))
-    timeline = "\n".join(
-        f"`{clock(x, tz):>7}` {x['label']} \u00b7 {x['queue_count']} eps \u00b7 played {dur_n(x['played_seconds'])}"
-        for x in s["snapshots"]
-    )
-    fields.append(_field("__\U0001f552 Timeline__", timeline[:1000], inline=False))
+    peak = max([w["played"] for w in s["windows"]] + [1])
+    lines = [
+        f"`{clock(w['snap'], tz):>7}` {label_name(w['snap'])} `{bar_chat(w['played'], peak):<10}` {window_sentence(w)}"
+        for w in s["windows"]
+    ]
+    shape = "\n".join(lines[-9:])
+    fields.append(_field("__\U0001f552 The shape of your day__", shape[:1000], inline=False))
+    snap = s.get("by_show_snapshot")
+    if snap:
+        piling = "\n".join(f"`{c:>3}` {n[:38]} \u00b7 {pct:.0f}%" for n, c, pct in show_share(snap)[:5])
+        fields.append(_field("__\U0001f4da What's piling up__", piling[:1000], inline=False))
+    if s.get("now_playing"):
+        np = s["now_playing"]
+        fields.append(_field("__\u25b6 Now playing__", f"{np['title']} \u2014 {np['podcast']}"[:300], inline=False))
     return _flow_embed(f"Daily flow \u2014 {pretty_day(s['day'])}", day_headline(s), fields,
                        generated, rr.grade_int(qe.get("grade") or "D"), tz)
 

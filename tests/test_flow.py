@@ -212,6 +212,80 @@ def minimal_run_json():
     }
 
 
+class StoryTests(unittest.TestCase):
+    def setUp(self):
+        self.history = [
+            snap("2026-10-15T09:00", "evening", 119, 280000, 800000, 2, 3000),
+            snap("2026-10-16T09:00", "morning", 120, 300000, 900000, 0, 0),
+            snap("2026-10-16T12:00", "manual", 118, 295000, 880000, 3, 7200),
+            snap("2026-10-16T22:00", "evening", 119, 298000, 870000, 5, 10800),
+        ]
+        self.history[1]["now_playing"] = {"title": "Pregame", "podcast": "Kraken Audio"}
+        self.history[2]["by_show"] = [{"podcast": "Kraken Audio", "count": 59, "seconds": 90000},
+                                      {"podcast": "RedHanded", "count": 30, "seconds": 40000}]
+        self.s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
+
+    def test_parse_fmt_seconds(self):
+        self.assertEqual(flow.parse_fmt_seconds("1 hr 4 mins 5 seconds"), 3845)
+        self.assertEqual(flow.parse_fmt_seconds("1\xa0week 2\xa0days"), 604800 + 172800)
+        self.assertEqual(flow.parse_fmt_seconds(""), 0)
+
+    def test_queue_by_show_groups_and_ranks(self):
+        d = {"queue": {"episodes": [
+            {"podcast": "A", "duration_fmt": "1 hr"}, {"podcast": "A", "duration_fmt": "30 mins"},
+            {"podcast": "B", "duration_fmt": "10 mins"}]}}
+        shows = flow.queue_by_show(d)
+        self.assertEqual([(r["podcast"], r["count"], r["seconds"]) for r in shows],
+                         [("A", 2, 5400), ("B", 1, 600)])
+
+    def test_snapshot_records_now_playing_and_by_show(self):
+        d = minimal_run_json()
+        d["now_playing"] = {"title": "T", "podcast": "P"}
+        d["queue"]["episodes"] = [{"podcast": "P", "duration_fmt": "5 mins"}]
+        sn = flow.snapshot_from_run(d, "morning")
+        self.assertEqual(sn["now_playing"], {"title": "T", "podcast": "P"})
+        self.assertEqual(sn["by_show"][0]["count"], 1)
+
+    def test_windows_carry_queue_change_and_arrivals(self):
+        w = self.s["windows"]
+        self.assertIsNone(w[0]["queue_delta"])
+        self.assertEqual(w[1]["queue_delta"], -2)
+        self.assertEqual(self.s["biggest_listen"]["played"], 10800)
+
+    def test_context_compares_to_yesterday_and_recent_average(self):
+        self.assertEqual(self.s["yesterday_listened"], 3000)
+        self.assertEqual(self.s["recent_average"], 3000)
+        lines = " ".join(line for _, line in flow.vs_lines(self.s))
+        self.assertIn("more than yesterday", lines)
+        self.assertIn("above your recent average", lines)
+
+    def test_a_quiet_stretch_inside_a_dash_is_not_called_nap_time(self):
+        history = [
+            snap("2026-10-16T09:00", "morning", played_seconds=100, since_local_iso="2026-10-16T07:00"),
+            snap("2026-10-16T10:00", "dash-start", played_seconds=100, since_local_iso="2026-10-16T09:00"),
+            snap("2026-10-16T12:00", "manual", played_seconds=0, since_local_iso="2026-10-16T10:00"),
+            snap("2026-10-16T15:00", "manual", played_seconds=0, since_local_iso="2026-10-16T12:00"),
+            snap("2026-10-16T18:00", "dash-end", played_seconds=500, since_local_iso="2026-10-16T15:00"),
+        ]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        text = " ".join(line for _, line in flow.highlights(s, NY))
+        self.assertIn("Quiet stretch mid-Dash", text)
+        self.assertNotIn("Nap time", text)
+
+    def test_labels_have_names_and_approximate_ones_are_marked(self):
+        self.assertEqual(flow.label_name({"label": "dash-end"}), "🏁 Dash end")
+        self.assertEqual(flow.label_name({"label": "manual"}), "📸 Check-in")
+        self.assertTrue(flow.label_name({"label": "morning", "approx": True}).endswith("≈"))
+
+    def test_story_shows_up_in_every_format(self):
+        chat = flow.render_day_chat(self.s, NY)
+        for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest listening stretch"):
+            self.assertIn(needle, chat)
+        page = flow.render_day_html(self.s, NY)
+        for needle in ("What&rsquo;s piling up", "Pregame", "how old your oldest unplayed episode is"):
+            self.assertIn(needle, page)
+
+
 class GeneratedAndQueueTests(unittest.TestCase):
     def setUp(self):
         self.history = [
@@ -246,7 +320,7 @@ class GeneratedAndQueueTests(unittest.TestCase):
         self.assertEqual(embed["timestamp"], "2026-10-16T20:18:00")
         names = [f["name"] for f in embed["fields"]]
         self.assertTrue(any("Dash 10:00am" in n for n in names))
-        self.assertTrue(any("Timeline" in n for n in names))
+        self.assertTrue(any("The shape of your day" in n for n in names))
 
     def test_discord_week_embed(self):
         w = flow.summarize_week(self.history, datetime.date(2026, 10, 16), NY)
@@ -298,7 +372,8 @@ class RenderTests(unittest.TestCase):
     def test_html_is_a_page_and_escapes(self):
         page = flow.render_day_html(self.s, NY)
         self.assertTrue(page.startswith("<!DOCTYPE html>"))
-        self.assertIn("Dash windows", page)
+        self.assertIn("The shape of your day", page)
+        self.assertIn("Dash 10:00am–6:00pm", page)
 
     def test_email_payload_matches_send_email_layout(self):
         payload = flow.email_payload("Subject here", "<p>x</p>")
