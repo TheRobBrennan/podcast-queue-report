@@ -60,7 +60,7 @@ MORNING_FALLBACK_HOUR = 11
 MORNING_FALLBACK_END_HOUR = 17   # past this, a "morning" snapshot would be a lie
 EVENING_FALLBACK_HOUR = 22
 MIN_GAP_MINUTES = 20
-PULSE_EVERY_MINUTES = 110      # a quiet reading about every two hours while the Mac is awake
+PULSE_EVERY_MINUTES = 55       # a quiet reading about every hour while the Mac is awake
 PULSE_FIRST_HOUR, PULSE_LAST_HOUR = 6, 23
 REPORTS_DIR = os.path.join(SCRIPT_DIR, "reports")
 DISCORD_FLOW_LABELS = ("dash-end", "evening")
@@ -382,7 +382,7 @@ def parse_clock(text):
     return datetime.time(hour, minute)
 
 
-def tag_dash(history, day, start_time, end_time, tz=None, within_minutes=120):
+def tag_dash(history, day, start_time, end_time, tz=None, within_minutes=60):
     """Label the readings nearest a Dash's real start and end as dash-start and
     dash-end (marked approximate). Returns (history, messages, ok). Only
     ordinary readings (check-ins and pulses) are relabeled; a reading that is
@@ -1301,7 +1301,7 @@ def main(argv=None):
     p.add_argument("--date", help="the day the Dash started (YYYY-MM-DD), default today")
     p.add_argument("--start", required=True, help="when the Dash really started, e.g. 10:11am")
     p.add_argument("--end", required=True, help="when the Dash really ended, e.g. 6:18pm")
-    p.add_argument("--within", type=int, default=120, help="how many minutes away a reading may be")
+    p.add_argument("--within", type=int, default=60, help="how many minutes away a reading may be")
 
     p = sub.add_parser("tick", help="hourly scheduler entry point")
     p.add_argument("--dry-run", action="store_true")

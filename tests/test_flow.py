@@ -172,15 +172,15 @@ class TickTests(unittest.TestCase):
         history = [snap("2026-10-16T08:00", "morning")]
         self.assertEqual(flow.decide_tick(history, now_ny("2026-10-16T15:06"), NY), "pulse")
         history = [snap("2026-10-16T08:00", "morning"), snap("2026-10-16T14:30", "manual")]
-        self.assertIsNone(flow.decide_tick(history, now_ny("2026-10-16T15:06"), NY))
+        self.assertIsNone(flow.decide_tick(history, now_ny("2026-10-16T15:06"), NY))  # 36 minutes since
 
     def test_late_afternoon_with_no_morning_snapshot_is_a_quiet_reading_not_a_morning(self):
         self.assertEqual(flow.decide_tick([], now_ny("2026-10-16T18:06"), NY), "pulse")
 
-    def test_quiet_readings_come_about_every_two_hours_and_not_in_the_small_hours(self):
+    def test_quiet_readings_come_about_every_hour_and_not_in_the_small_hours(self):
         h = [snap("2026-10-16T08:00", "morning"), snap("2026-10-16T12:06", "pulse")]
-        self.assertIsNone(flow.decide_tick(h, now_ny("2026-10-16T13:06"), NY))
-        self.assertEqual(flow.decide_tick(h, now_ny("2026-10-16T14:06"), NY), "pulse")
+        self.assertIsNone(flow.decide_tick(h, now_ny("2026-10-16T12:36"), NY))
+        self.assertEqual(flow.decide_tick(h, now_ny("2026-10-16T13:06"), NY), "pulse")
         self.assertIsNone(flow.decide_tick(h, now_ny("2026-10-17T03:06"), NY))
 
     def test_evening_fallback_at_10pm(self):

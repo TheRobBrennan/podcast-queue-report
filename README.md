@@ -260,7 +260,7 @@ make tag-dash START=10:11am END=6:18pm                 # today
 make tag-dash DAY=2026-10-15 START=10:11am END=6:18pm  # another day
 ```
 
-`tag-dash` labels the nearest ordinary readings (within two hours) as the Dash
+`tag-dash` labels the nearest ordinary readings (within an hour) as the Dash
 start and end, marked "≈" in the report; it never overwrites a morning,
 evening, or live Dash reading, and tags nothing if no reading is close enough.
 
