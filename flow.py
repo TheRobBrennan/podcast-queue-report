@@ -227,6 +227,7 @@ def summarize_day(history, day, tz=None):
             "first": prev is None,
             "played": 0 if prev is None else sn["played_seconds"],
             "arrivals": arrivals_seconds(prev, sn) if prev else None,
+            "arrivals_count": arrivals_count(prev, sn) if prev else None,
             "queue_delta": (sn["queue_count"] - prev["queue_count"]) if prev else None,
         })
         prev = sn
@@ -236,12 +237,44 @@ def summarize_day(history, day, tz=None):
     landed = [w for w in windows if w["arrivals"]]
     out["biggest_arrival"] = max(landed, key=lambda w: w["arrivals"]) if landed else None
     out["closed"] = any(sn["label"] == "evening" for sn in snaps)
+    out["by_part"] = listening_by_part(windows, tz)
+    first_dt, last_dt = parse_utc(first["ts"]), parse_utc(last["ts"])
+    out["elapsed_hours"] = (last_dt - first_dt).total_seconds() / 3600
     out["yesterday_listened"], out["recent_average"] = day_context(history, day, tz)
     shows = [sn for sn in snaps if sn.get("by_show")]
     out["by_show_snapshot"] = shows[-1] if shows else None
     playing = [sn for sn in snaps if sn.get("now_playing")]
     out["now_playing"] = playing[-1]["now_playing"] if playing else None
     return out
+
+
+PARTS = (
+    (4, 12, "🌅", "morning"),
+    (12, 17, "🌤️", "afternoon"),
+    (17, 22, "🌆", "evening"),
+    (22, 28, "🌙", "late night"),
+)
+
+
+def part_of(dt_local):
+    h = dt_local.hour if dt_local.hour >= DAY_STARTS_HOUR else dt_local.hour + 24
+    for lo, hi, icon, name in PARTS:
+        if lo <= h < hi:
+            return icon, name
+    return PARTS[-1][2], PARTS[-1][3]
+
+
+def listening_by_part(windows, tz=None):
+    """Seconds listened per part of the day, each window credited to the part
+    of the day its reading was taken in."""
+    totals = {}
+    for w in windows:
+        if w.get("first") or w["played"] <= 0:
+            continue
+        icon, name = part_of(local_dt(w["snap"], tz))
+        row = totals.setdefault(name, {"icon": icon, "name": name, "seconds": 0})
+        row["seconds"] += w["played"]
+    return sorted(totals.values(), key=lambda r: -r["seconds"])
 
 
 def day_context(history, day, tz=None):
@@ -327,6 +360,16 @@ def clock(snap, tz=None):
     return local_dt(snap, tz).strftime("%-I:%M%p").lower()
 
 
+def pretty_day_full(day):
+    """"Friday, Oct 16th, 2026" """
+    return f"{day.strftime('%A, %b')} {rr.ordinal(day.day)}, {day.year}"
+
+
+def upper_keep_ordinal(text):
+    """Uppercase for a heading, but leave the ordinal suffix lowercase: 16th, not 16TH."""
+    return re.sub(r"(\d)(ST|ND|RD|TH)\b", lambda m: m.group(1) + m.group(2).lower(), text.upper())
+
+
 def pretty_day(day):
     return day.strftime("%A, %b %-d")
 
@@ -381,6 +424,23 @@ def window_sentence(w):
     return " · ".join(bits)
 
 
+def pace_line(s):
+    """At the net pace so far, how long until the queue is clear."""
+    if s.get("elapsed_hours", 0) < 3:
+        return None
+    delta = s["queue_seconds_delta"]
+    qe = s["queue_end"]
+    so_far = "" if s["closed"] else " so far"
+    if delta >= 0:
+        return ("📈", f"The queue isn't shrinking yet{so_far}: arrivals are keeping up with your listening")
+    per_day = -delta / s["elapsed_hours"] * 24
+    days = qe["queue_seconds"] / per_day
+    if days > 60:
+        return ("🐢", f"At this pace{so_far} it would take over 60 days to clear the queue")
+    return ("🏁", f"At this pace{so_far} you'd clear the queue in about "
+                  f"{days:.0f} day{'' if round(days) == 1 else 's'}")
+
+
 def vs_lines(s):
     """Plain comparisons: against yesterday and against the recent average."""
     so_far = "" if s["closed"] else " so far"
@@ -404,10 +464,24 @@ def highlights(s, tz=None):
     out = []
     b = s.get("biggest_listen")
     if b:
-        out.append(("🏅", f"Biggest listening stretch: {dur_n(b['played'])}, ending at {clock(b['snap'], tz)}"))
+        start = local_dt(b["snap"], tz, key="since").strftime("%-I:%M%p").lower()
+        out.append(("🏅", f"Biggest listening stretch: {dur_n(b['played'])}, {start} to {clock(b['snap'], tz)}"))
     a = s.get("biggest_arrival")
     if a and a["arrivals"] >= 1800:
-        out.append(("📬", f"Biggest arrival burst: about {dur_n(a['arrivals'])} of new episodes by {clock(a['snap'], tz)}"))
+        start = local_dt(a["snap"], tz, key="since").strftime("%-I:%M%p").lower()
+        n = a["arrivals_count"]
+        out.append(("📬", f"Biggest arrival burst: {n} episode{'' if n == 1 else 's'} "
+                          f"({dur_n(a['arrivals'])}), {start} to {clock(a['snap'], tz)}"))
+    parts = s.get("by_part") or []
+    if parts and s["listened_seconds"] >= 3600:
+        top = parts[0]
+        pct = 100.0 * top["seconds"] / s["listened_seconds"]
+        if pct >= 40:
+            out.append((top["icon"], f"Your peak was {top['name']}: {dur_n(top['seconds'])} of "
+                                     f"{dur_n(s['listened_seconds'])} ({pct:.0f}%)"))
+    pace = pace_line(s)
+    if pace:
+        out.append(pace)
     if s["drought"] and s["drought"][0] >= 3 * 3600:
         span, x, y = s["drought"]
         mid_dash = any(d["start"]["ts"] < y and d["end"]["ts"] > x for d in s["dashes"])
@@ -717,7 +791,7 @@ def _page(title, body, headline=None, generated=None, tz=None, queue_html=""):
 <div style="max-width:720px;margin:0 auto;padding:32px 20px;">
 <div style="text-align:center;font-size:25px;line-height:1.3;margin-bottom:16px;white-space:nowrap;">{emoji_row_html()}</div>
 {headline_html}
-<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;">{html.escape(title)}</div>
+<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;letter-spacing:0.6px;">{html.escape(upper_keep_ordinal(title))}</div>
 <div style="text-align:center;margin:10px 0 4px;">{pill}</div>
 {body}
 {queue_html}
@@ -812,7 +886,7 @@ def piling_up_html(s):
 
 
 def render_day_html(s, tz=None, generated=None, d=None):
-    title = f"Daily Flow — {pretty_day(s['day'])}"
+    title = f"Daily Flow — {pretty_day_full(s['day'])}"
     if not s["snapshots"]:
         return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
     qs, qe = s["queue_start"], s["queue_end"]

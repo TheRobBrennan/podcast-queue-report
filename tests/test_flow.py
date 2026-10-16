@@ -367,6 +367,52 @@ class StoryTests(unittest.TestCase):
         self.assertIn("▲ 9 episodes since 9:00am EDT", red)
         self.assertIn("▲ 1 episode since", flow.arrivals_line(1, 100, 10000, since))
 
+    def test_biggest_stretch_and_burst_show_start_and_end_and_counts(self):
+        history = [
+            snap("2026-10-16T09:00", "morning", 120, 300000, 900000, 0, 0),
+            snap("2026-10-16T12:00", "manual", 118, 295000, 880000, 3, 7200, "2026-10-16T09:00"),
+            snap("2026-10-16T14:00", "manual", 121, 310000, 880000, 1, 600, "2026-10-16T12:00"),
+        ]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        text = " ".join(line for _, line in flow.highlights(s, NY))
+        self.assertIn("Biggest listening stretch: 2 hrs, 9:00am to 12:00pm", text)
+        # 121-118 played 1 = 4 episodes, 310000-295000+600 = 15600s
+        self.assertIn("Biggest arrival burst: 4 episodes (4 hrs 20 mins), 12:00pm to 2:00pm", text)
+
+    def test_listening_by_part_of_day_and_the_peak(self):
+        history = [
+            snap("2026-10-16T08:00", "morning", 120, 300000, 900000, 0, 0),
+            snap("2026-10-16T10:00", "manual", 119, 299000, 890000, 1, 1800),
+            snap("2026-10-16T15:00", "manual", 117, 290000, 880000, 4, 9000),
+            snap("2026-10-16T22:30", "evening", 118, 292000, 870000, 1, 900),
+        ]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        self.assertEqual([p["name"] for p in s["by_part"]], ["afternoon", "morning", "late night"])
+        text = " ".join(line for _, line in flow.highlights(s, NY))
+        self.assertIn("Your peak was afternoon: 2 hrs 30 mins of 3 hrs 15 mins (77%)", text)
+
+    def test_pace_line(self):
+        history = [
+            snap("2026-10-16T08:00", "morning", 120, 350000, 900000, 0, 0),
+            snap("2026-10-16T20:00", "evening", 100, 300000, 880000, 10, 30000),
+        ]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        # shrank 50000s in 12h = 100000s/day; 300000s left = 3 days
+        self.assertIn("clear the queue in about 3 days", flow.pace_line(s)[1])
+        history[1] = snap("2026-10-16T20:00", "evening", 125, 360000, 900000, 2, 3000)
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        self.assertIn("isn't shrinking", flow.pace_line(s)[1])
+        short = flow.summarize_day(history[:1] + [snap("2026-10-16T09:00", "manual")], datetime.date(2026, 10, 16), NY)
+        self.assertIsNone(flow.pace_line(short))
+
+    def test_heading_has_the_full_date_with_a_lowercase_ordinal(self):
+        self.assertEqual(flow.pretty_day_full(datetime.date(2026, 10, 16)), "Friday, Oct 16th, 2026")
+        self.assertEqual(flow.pretty_day_full(datetime.date(2026, 10, 22)), "Thursday, Oct 22nd, 2026")
+        self.assertEqual(flow.upper_keep_ordinal("Daily Flow — Friday, Oct 16th, 2026"),
+                         "DAILY FLOW — FRIDAY, OCT 16th, 2026")
+        page = flow.render_day_html(self.s, NY)
+        self.assertIn("DAILY FLOW — FRIDAY, OCT 16th, 2026", page)
+
     def test_labels_have_names_and_approximate_ones_are_marked(self):
         self.assertEqual(flow.label_name({"label": "dash-end"}), "🏁 Dash end")
         self.assertEqual(flow.label_name({"label": "manual"}), "📸 Check-in")
@@ -487,7 +533,7 @@ class RenderTests(unittest.TestCase):
 
     def test_browser_tab_title_is_title_cased(self):
         page = flow.render_day_html(self.s, NY)
-        self.assertIn("<title>Daily Flow — Friday, Oct 16 · Podcast Queue Report</title>", page)
+        self.assertIn("<title>Daily Flow — Friday, Oct 16th, 2026 · Podcast Queue Report</title>", page)
         self.assertNotIn("Daily flow", page)
 
     def test_email_payload_matches_send_email_layout(self):
