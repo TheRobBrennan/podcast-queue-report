@@ -7,3 +7,5 @@ __pycache__/
 *.stale
 .DS_Store
 reports/*.html
+.podcast_history.jsonl
+reports/flow/

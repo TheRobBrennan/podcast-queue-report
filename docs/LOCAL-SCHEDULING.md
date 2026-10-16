@@ -18,10 +18,11 @@ missed while the machine is asleep **coalesce into a single run on wake** - not
 one run per missed slot. `cron` does the opposite (it simply skips missed runs
 entirely and has no wake behavior), which is why it isn't used here.
 
-There is a second belt in the wrapper script: `MIN_GAP_MINUTES` (default 60)
-makes the script exit early if a *successful* run finished less than that many
-minutes ago. The real schedule's tightest gap is 2 hours, so this only ever
-fires if something unexpected triggers a double run.
+The wrapper no longer runs a report on every fire. It runs `flow.py tick`, which
+decides at run time whether a snapshot is actually due (see "Schedule" below),
+so an extra fire - a wake catch-up, `RunAtLoad`, a manual kickstart - is a
+harmless no-op. `flow.py` also refuses to take two snapshots less than 20
+minutes apart.
 
 The agent also sets `RunAtLoad`, so it fires once whenever it (re)loads - at
 login, reboot, or a manual `bootout`/`bootstrap`. This only covers the moment
@@ -34,23 +35,45 @@ opened the lid this morning" a bit sooner than waiting for the next
 
 ## Schedule
 
-| Time     | Gap since previous |
-| -------- | ------------------ |
-| 7:06am   | 8h                 |
-| 9:06am   | 2h                 |
-| 11:06am  | 2h                 |
-| 1:06pm   | 2h                 |
-| 3:06pm   | 2h                 |
-| 5:06pm   | 2h                 |
-| 7:06pm   | 2h                 |
-| 11:06pm  | 4h                 |
-| 3:06am   | 4h                 |
+Replaced on 2026-10-16. The old schedule ran a full report every two hours by
+the clock (7:06am to 7:06pm, then every four hours overnight). That produced
+a dozen near-identical reports a day, and they said little: during a Dash or
+a down day at the house the queue moves for reasons the clock does not know
+about. The replacement takes a few **snapshots tied to the day** and builds
+the report from the history of them (see "Daily flow" in `README.md`).
 
-Every 2 hours across the 7am-7pm working-hours window, then 4-hour gaps
-overnight. Tightening the daytime gap only helps while the Mac is actually
-awake (lid open, even with the display dimmed) - it buys nothing while
-genuinely asleep, since missed fires coalesce into one run either way
-regardless of how many were scheduled in between.
+The agent now fires at **:06 every hour** - the same thing in every time zone,
+which also ends the old problem where the hours in the plist kept meaning
+Pacific time after the Mac moved to Eastern, because launchd evaluates
+`StartCalendarInterval` hours in the zone it was loaded under. What to do at
+each fire is decided in Python from the Mac's **current** local clock, so
+travel needs no reload.
+
+| Snapshot   | Real trigger                                  | Fallback if nothing triggered it                    |
+| ---------- | --------------------------------------------- | --------------------------------------------------- |
+| morning    | `/start-day` runs `make snapshot LABEL=morning` | first tick from 11:00am to 5:00pm with none today |
+| dash-start | the `/doordash` skill at "Let's Dash"           | none - a Dash is only known when it is announced  |
+| dash-end   | the `/doordash` skill at "Dash complete"        | none                                              |
+| evening    | `/close-day` runs `make snapshot LABEL=evening` | first tick at or after 10:00pm with none today    |
+| pulse      | none, this one only ever comes from the tick   | about every hour, 6am to 11pm, while the Mac is awake; quiet (history only, no Discord, no email) |
+
+Pulses exist so a Dash announced after the fact still has readings near its
+real times: `make tag-dash START=10:11am END=6:18pm` labels the nearest two
+ordinary readings (within an hour) as the Dash start and end, marked "≈".
+
+The evening snapshot emails the daily flow (only when `FLOW_EMAIL=1`). On Sundays it also emails the
+weekly roll-up. Every snapshot posts to Discord and rewrites
+`reports/podcast_report.html`, but none of them open a browser.
+
+A "day" runs 4:00am to 4:00am local time, so a close-out at 12:30am still
+belongs to the day that is ending.
+
+Check what the next tick would do without taking a snapshot:
+
+```bash
+DRY_RUN=1 ./scripts/launchd_run.sh
+make tick FLAGS=--dry-run
+```
 
 ## Files
 
@@ -59,8 +82,10 @@ regardless of how many were scheduled in between.
   `~/Library/LaunchAgents/ai.sploosh.podcast-queue-report.plist`; this one is
   the version-controlled source of truth.
 - `scripts/launchd_run.sh` - what the agent actually executes. Sets a
-  launchd-safe `PATH`, checks `.env` exists, applies the `MIN_GAP_MINUTES`
-  guard, runs `make cron`, and writes a timestamped line either way.
+  launchd-safe `PATH`, checks `.env` exists, runs `flow.py tick`, and writes a
+  timestamped line either way.
+- `flow.py` - snapshot history (`.podcast_history.jsonl`, gitignored), the
+  day and week analysis, and the tick decision.
 
 ## Install / update
 
@@ -95,15 +120,16 @@ Force a run without waiting for the schedule:
 launchctl kickstart -k gui/$UID/ai.sploosh.podcast-queue-report
 ```
 
-To test the pipeline **without posting to Discord**, run the wrapper with
-`DRY_RUN=1` - it queries the Podcasts database and stops before the post:
+To see what a tick would do **without querying or posting anything**, run the
+wrapper with `DRY_RUN=1` - it only reads the snapshot history and prints the
+decision:
 
 ```bash
 DRY_RUN=1 ./scripts/launchd_run.sh
 ```
 
-Note that even a dry run advances the "since last check" stats window, because
-it still executes `podcast_summary.py`.
+Unlike the old `make cron` dry run, this does not touch the Podcasts database,
+so it does not advance the "since last check" stats window.
 
 ## Disable
 
@@ -174,7 +200,9 @@ still on for `python3.14`'s exact path under Full Disk Access.
 
 ### Email + Discord + open-in-browser, not SMS
 
-The agent runs `make cron`: email (Outlook) + Discord post + opening the
+**Superseded 2026-10-16** - the agent now runs `flow.py tick` and
+`make cron` is only for manual full runs; see "Schedule" above. What follows
+is history. The agent used to run `make cron`: email (Outlook) + Discord post + opening the
 HTML report in the default browser. This went through two changes worth
 knowing about if you're reading history: the 2026.09.12 fix (`d07e16b` /
 [#27](https://github.com/TheRobBrennan/podcast-queue-report/pull/27))

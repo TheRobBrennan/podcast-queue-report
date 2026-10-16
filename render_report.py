@@ -1,4 +1,4 @@
-import json, sys, datetime, html
+import json, sys, datetime, html, re
 from zoneinfo import ZoneInfo
 
 PLAYED_LABELS = [
@@ -352,7 +352,10 @@ def build_email(d):
     # summary to keep in sync as build_html grows new sections.
     return subject, build_html(d)
 
-def build_html(d):
+def build_html(d, embed=False):
+    """The full HTML report. `embed=True` returns just the queue part as a
+    fragment - without the cast row, headline, generated stamps or now-playing
+    banner, which the page it is embedded in already carries."""
     q = d["queue"]
     p = d["played"]
 
@@ -487,6 +490,8 @@ def build_html(d):
         )
     else:
         now_playing_html = ""
+    if embed:
+        now_playing_html = ""
 
     # No oldest episode at all means the queue is empty — there's nothing to
     # date-stamp, so say so instead of printing an "Oldest:" line.
@@ -501,7 +506,7 @@ def build_html(d):
         for e in d["emoji_list"]
     )
 
-    return f'''<!DOCTYPE html>
+    page = f'''<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -543,6 +548,17 @@ def build_html(d):
 </div>
 </body>
 </html>'''
+    if not embed:
+        return page
+    body = page.split("<body", 1)[1].split(">", 1)[1].rsplit("</body>", 1)[0]
+    for marker in (
+        'text-align:center;font-size:28px;line-height:1.3;margin-bottom:16px;',   # the cast row
+        'text-align:center;font-size:20px;font-weight:600;margin-bottom:12px;',   # the "That papa is" headline
+        'text-align:center;margin-bottom:32px;',                                  # header generated stamp
+        'text-align:center;margin-top:32px;',                                     # footer generated stamp
+    ):
+        body = re.sub(r'<div style="' + re.escape(marker) + r'">.*?</div>', "", body, count=1, flags=re.S)
+    return body
 
 if __name__ == "__main__":
     data = json.load(open(sys.argv[1]))

@@ -104,6 +104,10 @@ agent working in this repo. Run `make help` any time for the full list.
 | `make cron` | Runs the query once, then discord + email (what the launchd agent runs) |
 | `make open` | Regenerates the HTML report and opens it in your default browser (macOS `open`) |
 | `make all` | Runs the query once, then chat + html + email + sms + discord (each send skips cleanly if unconfigured) |
+| `make snapshot LABEL=morning` | Queries once, records the snapshot in the flow history, posts to Discord (`LABEL` is `morning`, `dash-start`, `dash-end`, `evening`, or `manual`; `evening` also emails the daily flow) |
+| `make flow` | Prints today's daily flow from the snapshot history |
+| `make week` | Prints this week's flow roll-up |
+| `make tick` | What launchd runs every hour: takes a fallback snapshot only if one is due (`FLAGS=--dry-run` to just look) |
 | `make unlock` | Clears stale git lock files (see `scripts/git_unlock.py`) |
 | `make commit MSG='...'` | Unlocks, stages everything, commits |
 | `make clean` | Removes the scratch `/tmp/podcast_run.json` file |
@@ -214,11 +218,63 @@ for each channel, there's no per-run confirmation prompt. `make all` /
 `npm start` run all of it from one query. See `SKILL.md` for how an AI
 agent should drive this.
 
+## Daily flow
+
+A fixed report every two hours says little: a Dash, a down day at the house,
+or an early morning each move the queue for reasons the clock does not know
+about. So instead of reporting by the clock, the report is built from a few
+**snapshots tied to the day**, each one a normal single query:
+
+| Snapshot | Taken when |
+|---|---|
+| `morning` | the day starts (`/start-day`), or an 11:00am-5:00pm fallback |
+| `dash-start`, `dash-end` | a Dash begins and ends (the `/doordash` skill) |
+| `evening` | the day closes (`/close-day`), or a 10:00pm fallback |
+
+Every snapshot is appended to `.podcast_history.jsonl` (gitignored): the
+queue size and length, how far behind, and what was played since the previous
+snapshot. From that history `make flow` and the evening email report, for the
+day:
+
+- **Listened** - total played, from the report's own "since last check" figure
+  summed over the day's snapshots.
+- **Queue and behind** - start of day to end of day.
+- **New arrivals (estimated)** - the change in queue length plus what was
+  played, i.e. how much new content landed in the queue.
+- **Dash windows** - for each `dash-start` to `dash-end` pair, what was
+  listened to and how the queue and the behind figure moved.
+- **Quietest stretch** - the longest run of snapshots with nothing played,
+  when it is at least three hours.
+
+`make week` adds the roll-up (total, daily average, best day, queue and
+behind movement); the Sunday evening snapshot emails it. A "day" runs 4:00am
+to 4:00am local time.
+
+Between those, the hourly tick takes a quiet **pulse** reading about every two
+hours (6am to 11pm, while the Mac is awake): history only, no Discord post, no
+email. That keeps readings close to whatever you were doing, so a Dash you
+announce **after the fact** still has readings near its real times:
+
+```bash
+make tag-dash START=10:11am END=6:18pm                 # today
+make tag-dash DAY=2026-10-15 START=10:11am END=6:18pm  # another day
+```
+
+`tag-dash` labels the nearest ordinary readings (within an hour) as the Dash
+start and end, marked "≈" in the report; it never overwrites a morning,
+evening, or live Dash reading, and tags nothing if no reading is close enough.
+
+Run `make snapshot LABEL=manual` any time for an extra data point. See
+**[docs/LOCAL-SCHEDULING.md](docs/LOCAL-SCHEDULING.md)** for how the hourly
+launchd tick decides when a fallback is due.
+
 ## Scheduled runs
 
-On macOS this runs itself on a schedule via a launchd user agent — no AI
-session in the loop, and missed runs coalesce into one instead of piling up
-after the lid opens. See **[docs/LOCAL-SCHEDULING.md](docs/LOCAL-SCHEDULING.md)**.
+On macOS a launchd user agent fires at :06 every hour and runs
+`flow.py tick`, which takes a morning or evening fallback snapshot only when
+one is due and the real trigger has not already fired. No AI session in the
+loop, and missed fires coalesce into one instead of piling up after the lid
+opens. See **[docs/LOCAL-SCHEDULING.md](docs/LOCAL-SCHEDULING.md)**.
 
 ## Known caveats
 

@@ -2,7 +2,7 @@ SHELL := /bin/bash
 PYTHON ?= python3
 RUN_JSON ?= /tmp/podcast_run.json
 
-.PHONY: help setup run chat sms email html open all discord cron unlock commit clean test
+.PHONY: help setup run chat sms email html open all discord cron snapshot tag-dash flow week tick unlock commit clean test
 
 help:
 	@echo "Podcast Queue Report — available commands:"
@@ -18,6 +18,11 @@ help:
 	@echo "  make all               Run once, then chat + html + email + sms + discord"
 	@echo "  make discord           Post the chat summary to Discord (needs DISCORD_WEBHOOK_URL in .env)"
 	@echo "  make cron              Run once, then email + discord + open the HTML report in your browser (used by the launchd agent)"
+	@echo "  make snapshot LABEL=x  Query once, record it in the flow history, post to Discord (morning | dash-start | dash-end | evening | manual)"
+	@echo "  make tag-dash START=10:11am END=6:18pm [DAY=YYYY-MM-DD]  Label the readings nearest a Dash announced after the fact"
+	@echo "  make flow              Print today's daily flow from the snapshot history"
+	@echo "  make week              Print this week's flow roll-up"
+	@echo "  make tick              What launchd runs hourly: take a fallback snapshot only if one is due"
 	@echo "  make unlock            Clear stale git lock files (see scripts/git_unlock.py)"
 	@echo "  make commit MSG='...'  Unlock, stage everything, and commit"
 	@echo "  make clean             Remove the scratch $(RUN_JSON) file"
@@ -80,6 +85,21 @@ cron: run
 	@$(PYTHON) render_report.py $(RUN_JSON) html > reports/podcast_report.html
 	@open reports/podcast_report.html
 	@echo ""
+
+snapshot:
+	@$(PYTHON) flow.py snapshot --label $(or $(LABEL),manual) $(FLAGS)
+
+tag-dash:
+	@$(PYTHON) flow.py tag-dash $(if $(DAY),--date $(DAY)) --start "$(START)" --end "$(END)"
+
+flow:
+	@$(PYTHON) flow.py day
+
+week:
+	@$(PYTHON) flow.py week
+
+tick:
+	@$(PYTHON) flow.py tick $(FLAGS)
 
 unlock:
 	$(PYTHON) scripts/git_unlock.py

@@ -59,12 +59,28 @@ def main():
             content = content[: DISCORD_LIMIT - 20].rstrip() + "\n… (truncated)"
         payload = {"content": content}
 
-    body = json.dumps(payload).encode("utf-8")
+    files = payload.pop("_files", None) or []
+    headers = {"Content-Type": "application/json"}
+    if files:
+        boundary = "----flowboundary" + os.urandom(8).hex()
+        parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="payload_json"\r\n'
+                 f'Content-Type: application/json\r\n\r\n{json.dumps(payload)}\r\n'.encode("utf-8")]
+        for i, path in enumerate(files):
+            with open(path, "rb") as f:
+                data = f.read()
+            parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="files[{i}]"; '
+                          f'filename="{os.path.basename(path)}"\r\nContent-Type: image/png\r\n\r\n').encode("utf-8")
+                         + data + b"\r\n")
+        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+        body = b"".join(parts)
+        headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
+    else:
+        body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         webhook_url,
         data=body,
         headers={
-            "Content-Type": "application/json",
+            **headers,
             "User-Agent": "podcast-queue-report/1.0 (+https://github.com/TheRobBrennan/podcast-queue-report)",
         },
         method="POST",
