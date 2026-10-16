@@ -966,7 +966,7 @@ def mini_playing_html(np):
         link = np.get("episode_url") or np.get("podcast_url")
         art = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
     return (
-        '<div style="display:flex;gap:10px;align-items:center;margin-top:8px;">'
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;">'
         + (f'<div style="flex:0 0 36px;">{art}</div>' if art else "")
         + '<div style="flex:1;min-width:0;font-size:12px;line-height:1.35;">'
         '<span style="color:#047857;font-weight:700;">▶ Playing</span> '
@@ -988,12 +988,14 @@ def timeline_html(s, tz=None):
         bar = (f'<div style="height:10px;border-radius:5px;background:{"#38bdf8" if shaded else "#34d399"};width:{width}%;"></div>'
                if width else '<div style="font-size:11px;color:#cbd5e1;">·</div>')
         text, tone, delta = window_story(w)
-        chip = ""
+        chip_css = ("flex:0 0 38px;text-align:center;box-sizing:border-box;font-size:12px;font-weight:700;"
+                    "border-radius:10px;padding:1px 0;white-space:nowrap;")
         if tone:
             bg, fg, arrow = QUEUE_TONES[tone]
-            chip = (f'<span style="display:inline-block;background:{bg};color:{fg};font-weight:700;font-size:12px;'
-                    f'border-radius:10px;padding:1px 8px;margin-right:8px;white-space:nowrap;">'
+            chip = (f'<span style="{chip_css}background:{bg};color:{fg};">'
                     f'{arrow}{"" if not delta else " " + str(abs(delta))}</span>')
+        else:
+            chip = f'<span style="{chip_css}"></span>'
         when = clock(sn, tz) if w.get("first") else window_label(sn, tz)
         # show what was playing only when it changes, not on every row of one long episode
         np = sn.get("now_playing")
@@ -1002,12 +1004,13 @@ def timeline_html(s, tz=None):
             last_playing = np.get("title")
         rows += (
             f'<tr style="{dash_style}">'
-            f'<td style="padding:12px;white-space:nowrap;vertical-align:top;">'
+            f'<td style="padding:9px 12px;white-space:nowrap;vertical-align:top;">'
             f'<div style="font-weight:700;font-size:14px;">{html.escape(when)}</div>'
             f'<div style="font-size:12px;color:#64748b;">{html.escape(label_name(sn))}</div></td>'
-            f'<td style="padding:12px;width:26%;vertical-align:middle;">{bar}</td>'
-            f'<td style="padding:12px;font-size:13px;vertical-align:top;line-height:1.4;">{chip}{html.escape(text)}'
-            f'{playing_html}</td>'
+            f'<td style="padding:9px 12px;width:22%;vertical-align:middle;">{bar}</td>'
+            f'<td style="padding:9px 12px 9px 4px;font-size:13px;vertical-align:top;line-height:1.35;">'
+            f'<div style="display:flex;gap:8px;align-items:flex-start;">{chip}'
+            f'<div style="flex:1;min-width:0;">{html.escape(text)}{playing_html}</div></div></td>'
             '</tr>'
         )
         if sn["label"] == "dash-start":
