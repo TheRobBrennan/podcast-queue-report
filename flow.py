@@ -84,6 +84,19 @@ def parse_fmt_seconds(text):
     return total
 
 
+def oldest_episode_from_run(d):
+    """The oldest unplayed episode - the one the 'behind' figure measures: the
+    oldest that has not been started, or the oldest of all if every one has."""
+    eps = d["queue"].get("episodes", [])
+    fresh = [e for e in eps if not e.get("in_progress")] or eps
+    dated = [e for e in fresh if e.get("pubdate")]
+    if not dated:
+        return None
+    e = min(dated, key=lambda x: x["pubdate"])
+    return {k: e.get(k) for k in ("title", "podcast", "episode_url", "podcast_url", "artwork_url", "pubdate")
+            if e.get(k) is not None}
+
+
 def in_progress_episodes(d, top=8):
     """Episodes you have started but not finished: how far through each, and
     how much is left."""
@@ -162,6 +175,9 @@ def snapshot_from_run(d, label, source="live"):
         snap["now_playing"] = {k: np.get(k) for k in (
             "title", "podcast", "episode_url", "podcast_url", "artwork_url",
             "elapsed_seconds", "duration_seconds", "remaining_fmt") if np.get(k) is not None}
+    oldest_ep = oldest_episode_from_run(d)
+    if oldest_ep:
+        snap["oldest_episode"] = oldest_ep
     started = in_progress_episodes(d)
     if started:
         snap["in_progress"] = started
@@ -323,6 +339,8 @@ def summarize_day(history, day, tz=None):
         history, day, tz, cutoff=day_offset(last, tz))
     started = [sn for sn in snaps if sn.get("in_progress")]
     out["in_progress_snapshot"] = started[-1] if started else None
+    olds = [sn for sn in snaps if sn.get("oldest_episode")]
+    out["oldest_episode"] = olds[-1]["oldest_episode"] if olds else None
     shows = [sn for sn in snaps if sn.get("by_show")]
     out["by_show_snapshot"] = shows[-1] if shows else None
     playing = [sn for sn in snaps if sn.get("now_playing")]
@@ -845,7 +863,7 @@ def fit_value(text):
     return (f'<span style="font-size:{CARD_VALUE_SIZE}px;white-space:nowrap;">{html.escape(text)}</span>')
 
 
-def _card(label, value, sub="", hint="", value_html=None, sub_html=None):
+def _card(label, value, sub="", hint="", value_html=None, sub_html=None, extra_html=""):
     hint_html = (f'<div style="font-size:11px;color:#94a3b8;margin-top:8px;">{html.escape(hint)}</div>'
                  if hint else "")
     if sub_html is not None:
@@ -855,15 +873,47 @@ def _card(label, value, sub="", hint="", value_html=None, sub_html=None):
                     if sub else "")
     value_part = value_html if value_html is not None else fit_value(value)
     return (
-        '<td width="50%" valign="top" style="padding:0 8px 16px 0;">'
         '<div style="background:#ffffff;border-radius:12px;padding:20px;'
         'box-shadow:0 1px 3px rgba(0,0,0,0.08);">'
         f'<div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#94a3b8;'
         f'letter-spacing:0.6px;margin-bottom:8px;">{html.escape(label)}</div>'
         f'<div style="font-size:22px;font-weight:700;line-height:1.2;">{value_part}</div>'
-        f'{sub_html}{hint_html}'
-        '</div></td>'
+        f'{sub_html}{hint_html}{extra_html}'
+        '</div>'
     )
+
+
+def oldest_episode_html(ep, tz=None):
+    """The oldest unplayed episode itself: artwork, linked title and show, and
+    when it was published."""
+    if not ep or not ep.get("title"):
+        return ""
+    art = ""
+    if ep.get("artwork_url"):
+        img = (f'<img src="{html.escape(ep["artwork_url"])}" width="44" height="44" '
+               'style="border-radius:8px;display:block;" alt="">')
+        link = ep.get("episode_url") or ep.get("podcast_url")
+        art = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
+    when = ""
+    if ep.get("pubdate"):
+        age = (utcnow() - parse_utc(ep["pubdate"])).total_seconds()
+        when = (f'<div style="font-size:12px;color:#94a3b8;margin-top:1px;">'
+                f'{html.escape(published_label(ep["pubdate"], tz))} · {html.escape(ago_phrase(age))}</div>')
+    return (
+        '<div style="display:flex;gap:12px;align-items:center;margin-top:14px;padding-top:14px;'
+        'border-top:1px solid #f1f5f9;">'
+        f'<div style="flex:0 0 44px;">{art}</div>'
+        '<div style="flex:1;min-width:0;">'
+        f'<div style="font-size:13px;font-weight:700;line-height:1.3;">{_link(ep["title"], ep.get("episode_url"), "#1e293b")}</div>'
+        f'<div style="font-size:12px;color:#64748b;">{_link(ep.get("podcast"), ep.get("podcast_url"), "#64748b")}</div>'
+        f'{when}</div></div>'
+    )
+
+
+def card_grid(cards):
+    """Two cards across, every row as tall as its tallest card."""
+    return ('<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
+            + "".join(cards) + "</div>")
 
 
 def keycaps(n):
@@ -938,13 +988,12 @@ def queue_card(qs, qe, tz=None):
                   f'{keycaps(qe["queue_count"])}</span>')
     sub_html = f'<span style="color:{fg};font-weight:600;">{html.escape(sub)}</span>'
     return (
-        '<td width="50%" valign="top" style="padding:0 8px 16px 0;">'
         '<div style="background:#ffffff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">'
         '<div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#94a3b8;'
         'letter-spacing:0.6px;margin-bottom:8px;">Episodes in your queue</div>'
         f'<div>{value_html}</div>'
         f'<div style="font-size:13px;margin-top:10px;">{sub_html}</div>'
-        '</div></td>'
+        '</div>'
     )
 
 
@@ -1354,16 +1403,16 @@ def render_day_html(s, tz=None, generated=None, d=None):
               f"{s['listened_count']} episode{'' if s['listened_count'] == 1 else 's'} finished {since_label(qs, tz)}"),
         queue_card(qs, qe, tz),
         _card("The oldest unplayed episode in your queue", dur_n(qe['behind_seconds'], 4),
-              sub_html=age_line(s["behind_delta"], since_label(qs, tz))),
+              sub_html=age_line(s["behind_delta"], since_label(qs, tz)),
+              extra_html=oldest_episode_html(oldest_episode_from_run(d) if d else s.get("oldest_episode"), tz)),
         _card("New arrivals", dur(s["arrivals_seconds"]),
               sub_html=arrivals_line(s["arrivals_count"], s["arrivals_seconds"], s["listened_seconds"],
                                      since_label(qs, tz))),
     ]
-    rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))
     started = in_progress_episodes(d) if d else ((s.get("in_progress_snapshot") or {}).get("in_progress") or [])
     parts = [queue_chart_svg(s, tz).replace("margin:8px 0 4px;", "margin:20px 0 4px;", 1),
              in_progress_html(started, tz),
-             f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:0;">{rows}</table>']
+             card_grid(cards)]
     hl = highlights(s, tz)
     if hl:
         items = "".join(f'<div style="margin:6px 0;font-size:14px;">{icon} {html.escape(line)}</div>' for icon, line in hl)
@@ -1392,9 +1441,6 @@ def render_week_html(w, tz=None, generated=None, d=None):
               f"behind {behind_phrase(w['behind_delta'])}"),
         _card("New arrivals", dur(w["arrivals_seconds"])),
     ]
-    rows = "".join(
-        f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2)
-    )
     day_rows = "".join(
         f"<tr><td style='padding:8px 12px;'>{d['day'].strftime('%a %b %-d')}</td>"
         f"<td style='padding:8px 12px;'>{html.escape(dur(d['listened_seconds']))}</td>"
@@ -1402,7 +1448,7 @@ def render_week_html(w, tz=None, generated=None, d=None):
         for d in w["days"]
     )
     body = (
-        f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">{rows}</table>'
+        f'<div style="margin-top:20px;">{card_grid(cards)}</div>'
         '<table width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;'
         'box-shadow:0 1px 3px rgba(0,0,0,0.08);font-size:13px;">'
         "<tr style='text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;'>"

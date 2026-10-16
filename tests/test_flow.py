@@ -786,6 +786,32 @@ class ChartAndProgressTests(unittest.TestCase):
         self.assertEqual(flow.snapshot_from_run(d, "pulse")["in_progress"][0]["pct"], 75)
 
 
+class OldestEpisodeTests(unittest.TestCase):
+    def test_the_oldest_unplayed_episode_is_the_oldest_one_not_started(self):
+        d = {"queue": {"episodes": [
+            {"title": "Started Long Ago", "podcast": "A", "pubdate": "2026-10-01T07:00:00", "in_progress": True},
+            {"title": "Oldest Fresh", "podcast": "B", "pubdate": "2026-10-06T07:00:00", "in_progress": False,
+             "episode_url": "https://e/b", "artwork_url": "https://a/b.jpg"},
+            {"title": "Newer", "podcast": "C", "pubdate": "2026-10-12T07:00:00", "in_progress": False},
+        ]}}
+        ep = flow.oldest_episode_from_run(d)
+        self.assertEqual((ep["title"], ep["podcast"]), ("Oldest Fresh", "B"))
+        self.assertEqual(flow.snapshot_from_run(dict(minimal_run_json(), queue=dict(minimal_run_json()["queue"], episodes=d["queue"]["episodes"])), "pulse")["oldest_episode"]["title"], "Oldest Fresh")
+
+    def test_the_card_shows_the_episode_with_artwork_links_and_date(self):
+        ep = {"title": "Oldest Fresh", "podcast": "B", "episode_url": "https://e/b", "podcast_url": "https://p/b",
+              "artwork_url": "https://a/b.jpg", "pubdate": "2026-10-06T07:00:00"}
+        block = flow.oldest_episode_html(ep, NY)
+        for needle in ('src="https://a/b.jpg"', 'href="https://e/b"', 'href="https://p/b"', "Tue, Oct 6 · "):
+            self.assertIn(needle, block)
+        self.assertEqual(flow.oldest_episode_html(None), "")
+
+    def test_cards_sit_in_an_equal_height_grid(self):
+        grid = flow.card_grid(["<div>a</div>", "<div>b</div>"])
+        self.assertIn("display:grid", grid)
+        self.assertNotIn("<td", grid)
+
+
 class RenderTests(unittest.TestCase):
     def setUp(self):
         self.history = [
