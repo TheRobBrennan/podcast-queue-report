@@ -192,6 +192,80 @@ class TickTests(unittest.TestCase):
         self.assertIsNone(flow.decide_tick([], now, la))
 
 
+def minimal_run_json():
+    """Just enough of podcast_summary's output for render_report.build_html."""
+    return {
+        "generated_at": "2026-10-16T20:06:22.5",
+        "last_run_iso": "2026-10-16T18:06:23.3",
+        "queue": {
+            "count": 0, "count_fmt": "0", "total_seconds": 0, "total_fmt": "0 seconds",
+            "oldest_date": None, "days_behind": 0, "days_behind_amount": "0 seconds",
+            "days_behind_phrase": "right on time", "grade": "A", "episodes": [],
+            "up_next_remaining_fmt": "0 seconds",
+        },
+        "played": {"since_last_run": {"count": 0, "count_fmt": "0", "total_seconds": 0,
+                                      "total_fmt": "0 seconds"}},
+        "duplicates": [], "now_playing": None,
+        "emoji_header": "x", "emoji_list": ["x"],
+        "config": {"email": "", "phone": "", "signoff_name": "", "label": "Podcast Queue Report",
+                   "timezone": "America/New_York"},
+    }
+
+
+class GeneratedAndQueueTests(unittest.TestCase):
+    def setUp(self):
+        self.history = [
+            snap("2026-10-16T09:00", "morning", 120, 300000, 900000, 0, 0),
+            snap("2026-10-16T10:00", "dash-start", 120, 300000, 900000, 1, 600),
+            snap("2026-10-16T18:00", "dash-end", 117, 290000, 860000, 3, 9000),
+        ]
+        self.s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
+        self.generated = datetime.datetime(2026, 10, 16, 20, 18, tzinfo=UTC)
+
+    def test_long_stamp_matches_the_main_report_format(self):
+        self.assertEqual(flow.long_stamp(self.generated, NY), "Friday, October 16th, 2026 @ 4:18pm EDT")
+
+    def test_web_report_has_the_generated_pill_at_top_and_bottom(self):
+        page = flow.render_day_html(self.s, NY, self.generated)
+        self.assertEqual(page.count("Generated Friday, October 16th, 2026 @ 4:18pm EDT"), 2)
+
+    def test_queue_section_is_appended_without_a_second_cast_row(self):
+        page = flow.render_day_html(self.s, NY, self.generated, minimal_run_json())
+        self.assertIn("The unplayed queue", page)
+        self.assertIn("all caught up", page)
+        self.assertEqual(page.count("<html"), 1)
+        self.assertEqual(page.count("</body>"), 1)
+        self.assertEqual(page.count("margin-bottom:16px;\">"), 1)  # one emoji row only
+
+    def test_discord_day_embed(self):
+        payload = flow.build_discord_day(self.s, self.generated, NY)
+        embed = payload["embeds"][0]
+        self.assertIn("🐷", embed["title"])
+        self.assertIn("That papa listened to", embed["description"])
+        self.assertIn("Generated Friday, October 16th, 2026 @ 4:18pm EDT", embed["description"])
+        self.assertEqual(embed["timestamp"], "2026-10-16T20:18:00")
+        names = [f["name"] for f in embed["fields"]]
+        self.assertTrue(any("Dash 10:00am" in n for n in names))
+        self.assertTrue(any("Timeline" in n for n in names))
+
+    def test_discord_week_embed(self):
+        w = flow.summarize_week(self.history, datetime.date(2026, 10, 16), NY)
+        embed = flow.build_discord_week(w, self.generated, NY)["embeds"][0]
+        self.assertIn("Weekly flow", embed["description"])
+        self.assertTrue(any("By day" in f["name"] for f in embed["fields"]))
+
+    def test_email_is_off_unless_asked_for(self):
+        old = os.environ.pop("FLOW_EMAIL", None)
+        try:
+            self.assertFalse(flow._flow_email_enabled())
+            os.environ["FLOW_EMAIL"] = "1"
+            self.assertTrue(flow._flow_email_enabled())
+        finally:
+            os.environ.pop("FLOW_EMAIL", None)
+            if old is not None:
+                os.environ["FLOW_EMAIL"] = old
+
+
 class RenderTests(unittest.TestCase):
     def setUp(self):
         self.history = [

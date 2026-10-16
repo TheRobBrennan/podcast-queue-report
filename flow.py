@@ -32,10 +32,12 @@ import datetime
 import html
 import json
 import os
+import re
 import subprocess
 import sys
 
 import podcast_summary as ps
+import render_report as rr
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_PATH = os.environ.get(
@@ -49,6 +51,8 @@ MORNING_FALLBACK_HOUR = 11
 MORNING_FALLBACK_END_HOUR = 17   # past this, a "morning" snapshot would be a lie
 EVENING_FALLBACK_HOUR = 22
 MIN_GAP_MINUTES = 20
+REPORTS_DIR = os.path.join(SCRIPT_DIR, "reports")
+DISCORD_FLOW_LABELS = ("dash-end", "evening")
 
 
 # --- history ---------------------------------------------------------------
@@ -354,26 +358,71 @@ def _card(label, value, sub=""):
     )
 
 
-def _page(title, body, headline=None):
+def utcnow():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def long_stamp(generated, tz=None):
+    """"Friday, October 16th, 2026 @ 4:18pm EDT" - same form as the main report."""
+    local = generated.astimezone(tz or ps.LOCAL_TZ)
+    return (
+        local.strftime(f"%A, %B {rr.ordinal(local.day)}, %Y @ ")
+        + local.strftime("%-I:%M%p").lower() + local.strftime(" %Z")
+    )
+
+
+def generated_pill(generated, tz=None):
+    """The same pill the main report uses, stamped with when this was built."""
+    return (
+        '<span style="display:inline-block;background:#e2e8f0;color:#64748b;font-size:11px;'
+        'font-weight:600;letter-spacing:0.3px;border-radius:20px;padding:5px 14px;">'
+        f'\U0001f552 Generated {html.escape(long_stamp(generated, tz))}</span>'
+    )
+
+
+def queue_section_html(d):
+    """The main report's body (grade line, now playing, the queue with artwork)
+    for appending under the flow summary. Its own emoji row is dropped, since
+    the flow page already opens with the whole cast."""
+    page = rr.build_html(d)
+    body = page.split("<body", 1)[1].split(">", 1)[1].rsplit("</body>", 1)[0]
+    body = re.sub(
+        r'<div style="text-align:center;font-size:28px;line-height:1.3;margin-bottom:16px;">.*?</div>',
+        "", body, count=1, flags=re.S,
+    )
+    return (
+        '<div style="border-top:2px dashed #cbd5e1;margin:40px 0 28px;"></div>'
+        '<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;'
+        'text-transform:uppercase;letter-spacing:0.6px;margin-bottom:20px;">The unplayed queue</div>'
+        + body
+    )
+
+
+def _page(title, body, headline=None, generated=None, tz=None, queue_html=""):
+    generated = generated or utcnow()
     headline_html = (
         f'<div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:8px;">'
         f'{html.escape(headline)}</div>' if headline else ""
     )
+    pill = generated_pill(generated, tz)
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>{html.escape(title)}</title></head>
 <body style="margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
-<div style="max-width:680px;margin:0 auto;padding:32px 20px;">
+<div style="max-width:720px;margin:0 auto;padding:32px 20px;">
 <div style="text-align:center;font-size:28px;line-height:1.3;margin-bottom:16px;">{emoji_row_html()}</div>
 {headline_html}
 <div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;">{html.escape(title)}</div>
+<div style="text-align:center;margin:10px 0 4px;">{pill}</div>
 {body}
+{queue_html}
+<div style="text-align:center;margin-top:32px;">{pill}</div>
 </div></body></html>"""
 
 
-def render_day_html(s, tz=None):
+def render_day_html(s, tz=None, generated=None, d=None):
     title = f"Daily flow — {pretty_day(s['day'])}"
     if not s["snapshots"]:
-        return _page(title, "<p>No snapshots recorded.</p>")
+        return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
     qs, qe = s["queue_start"], s["queue_end"]
     cards = [
         _card("Listened", dur(s["listened_seconds"]),
@@ -430,13 +479,14 @@ def render_day_html(s, tz=None):
         "<th style='padding:12px;'>Played in window</th></tr>"
         f"{body_rows}</table>"
     )
-    return _page(title, "".join(parts), day_headline(s))
+    return _page(title, "".join(parts), day_headline(s), generated, tz,
+                 queue_section_html(d) if d else "")
 
 
-def render_week_html(w, tz=None):
+def render_week_html(w, tz=None, generated=None, d=None):
     title = "Weekly flow"
     if not w["days"]:
-        return _page(title, "<p>No snapshots recorded this week.</p>")
+        return _page(title, "<p>No snapshots recorded this week.</p>", None, generated, tz)
     best = w["best"]
     cards = [
         _card("Listened", dur(w["listened_seconds"]),
@@ -463,7 +513,79 @@ def render_week_html(w, tz=None):
         "<th style='padding:12px;'>Day</th><th style='padding:12px;'>Listened</th>"
         f"<th style='padding:12px;'>Queue</th></tr>{day_rows}</table>"
     )
-    return _page(title, body, week_headline(w))
+    return _page(title, body, week_headline(w), generated, tz,
+                 queue_section_html(d) if d else "")
+
+
+def _flow_embed(title_line, headline, fields, generated, color, tz=None):
+    return {"embeds": [{
+        "title": ps.emoji_header(),
+        "description": f"**{headline}**\n{title_line}\n\U0001f552 Generated {long_stamp(generated, tz)}",
+        "color": color,
+        "fields": fields,
+        "footer": {"text": "Podcast Queue Report \u00b7 Daily flow"},
+        "timestamp": generated.astimezone(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
+    }]}
+
+
+def _field(name, value, inline=True):
+    return {"name": name, "value": value or "-", "inline": inline}
+
+
+def build_discord_day(s, generated=None, tz=None):
+    generated = generated or utcnow()
+    if not s["snapshots"]:
+        return {"content": f"Daily flow, {pretty_day(s['day'])}: no snapshots recorded."}
+    qs, qe = s["queue_start"], s["queue_end"]
+    fields = [
+        _field("__\U0001f3a7 Listened__",
+               f"{s['listened_count']} episodes\n{rr.wrap_duration(dur(s['listened_seconds']))}"),
+        _field("__\U0001f4e5 Queue__",
+               f"{qs['queue_count']} \u2192 {qe['queue_count']} episodes\n{signed(s['queue_seconds_delta'])}"),
+        _field("__\u23f3 Behind__",
+               f"{rr.wrap_duration(dur(qe['behind_seconds']))}\n{behind_phrase(s['behind_delta'])}"),
+        _field("__\U0001f4ec New arrivals__", f"{rr.wrap_duration(dur(s['arrivals_seconds']))}\nestimated"),
+    ]
+    for dsh in s["dashes"]:
+        fields.append(_field(
+            f"__\U0001f690 Dash {clock(dsh['start'], tz)}\u2013{clock(dsh['end'], tz)}__",
+            f"listened {dur(dsh['listened_seconds'])}\nqueue {signed(dsh['queue_seconds_delta'])}\n"
+            f"behind {behind_phrase(dsh['behind_delta'])}", inline=False))
+    if s["drought"] and s["drought"][0] >= 3 * 3600:
+        span, a, b = s["drought"]
+        fields.append(_field("__\U0001f634 Quietest stretch__",
+                             f"{dur(span)}, "
+                             f"{local_dt({'ts': a}, tz).strftime('%-I:%M%p').lower()}\u2013"
+                             f"{local_dt({'ts': b}, tz).strftime('%-I:%M%p').lower()}", inline=False))
+    timeline = "\n".join(
+        f"`{clock(x, tz):>7}` {x['label']} \u00b7 {x['queue_count']} eps \u00b7 played {dur_n(x['played_seconds'])}"
+        for x in s["snapshots"]
+    )
+    fields.append(_field("__\U0001f552 Timeline__", timeline[:1000], inline=False))
+    return _flow_embed(f"Daily flow \u2014 {pretty_day(s['day'])}", day_headline(s), fields,
+                       generated, rr.grade_int(qe.get("grade") or "D"), tz)
+
+
+def build_discord_week(w, generated=None, tz=None):
+    generated = generated or utcnow()
+    if not w["days"]:
+        return {"content": "Weekly flow: no snapshots recorded this week."}
+    best = w["best"]
+    fields = [
+        _field("__\U0001f3a7 Listened__",
+               f"{rr.wrap_duration(dur(w['listened_seconds']))}\n{dur_n(w['average_seconds'])} a day over {len(w['days'])} days"),
+        _field("__\U0001f3c6 Best day__", f"{pretty_day(best['day'])}\n{dur_n(best['listened_seconds'], 3)}"),
+        _field("__\U0001f4e5 Queue__",
+               f"{w['queue_start']['queue_count']} \u2192 {w['queue_end']['queue_count']} episodes\nbehind {behind_phrase(w['behind_delta'])}"),
+        _field("__\U0001f4ec New arrivals__", f"{rr.wrap_duration(dur(w['arrivals_seconds']))}\nestimated"),
+        _field("__\U0001f4c6 By day__", "\n".join(
+            f"`{d['day'].strftime('%a %b %-d'):<8}` {dur_n(d['listened_seconds'])} \u00b7 {d['queue_end']['queue_count']} eps"
+            for d in w["days"])[:1000], inline=False),
+    ]
+    first, last = w["days"][0]["day"], w["days"][-1]["day"]
+    return _flow_embed(f"Weekly flow \u2014 {first.strftime('%b %-d')} to {last.strftime('%b %-d')}",
+                       week_headline(w), fields, generated,
+                       rr.grade_int(w["queue_end"].get("grade") or "D"), tz)
 
 
 def email_payload(subject, body_html):
@@ -524,22 +646,39 @@ def write_html_report():
     return None
 
 
-def email_day(history, day, label):
-    s = summarize_day(history, day)
+def _flow_email_enabled():
+    return os.environ.get("FLOW_EMAIL", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def write_flow_pages(history, day, d, generated, tz=None):
+    """The web reports: reports/daily_flow.html is always today's flow so far
+    plus the latest queue; reports/flow/<date>.html keeps each day. Sunday's
+    evening snapshot also writes reports/weekly_flow.html."""
+    os.makedirs(os.path.join(REPORTS_DIR, "flow"), exist_ok=True)
+    s = summarize_day(history, day, tz)
+    page = render_day_html(s, tz, generated, d)
+    daily = os.path.join(REPORTS_DIR, "daily_flow.html")
+    archive = os.path.join(REPORTS_DIR, "flow", f"{day.isoformat()}.html")
+    for path in (daily, archive):
+        with open(path, "w") as f:
+            f.write(page)
+    paths = {"day": daily, "day_archive": archive}
+    if day.weekday() == 6:
+        w = summarize_week(history, day, tz)
+        path = os.path.join(REPORTS_DIR, "weekly_flow.html")
+        with open(path, "w") as f:
+            f.write(render_week_html(w, tz, generated, d))
+        paths["week"] = path
+    return paths, s
+
+
+def email_day(s, page_html, label):
     qe = s["queue_end"]
     subject = (
-        f"{label} — Daily flow, {pretty_day(day)}: listened {dur(s['listened_seconds'])}, "
+        f"{label} \u2014 Daily flow, {pretty_day(s['day'])}: listened {dur(s['listened_seconds'])}, "
         f"queue {qe['queue_count']} episodes"
     )
-    return _send(email_payload(subject, render_day_html(s)), "send_email.py")
-
-
-def email_week(history, day, label):
-    w = summarize_week(history, day)
-    if not w["days"]:
-        return False
-    subject = f"{label} — Weekly flow: listened {dur(w['listened_seconds'])}"
-    return _send(email_payload(subject, render_week_html(w)), "send_email.py")
+    return _send(email_payload(subject, page_html), "send_email.py")
 
 
 def take_snapshot(label, quiet=False, open_report=False, history_path=None):
@@ -547,19 +686,29 @@ def take_snapshot(label, quiet=False, open_report=False, history_path=None):
     snap = snapshot_from_run(d, label)
     append_snapshot(snap, history_path)
     history = load_history(history_path)
-    path = write_html_report()
+    generated = parse_utc(d["generated_at"])
+    day = day_of(local_dt(snap))
+    write_html_report()
+    paths, s = write_flow_pages(history, day, d, generated)
     cfg_label = d.get("config", {}).get("label") or "Podcast Queue Report"
-    print(f"📸 {label} snapshot recorded: {snap['queue_count']} episodes, "
+    print(f"\U0001f4f8 {label} snapshot recorded: {snap['queue_count']} episodes, "
           f"played {dur(snap['played_seconds'])} since the last one")
-    if open_report and path:
-        subprocess.run(["open", path])
+    print(f"\U0001f310 Web report: {paths['day']}")
+    if open_report:
+        subprocess.run(["open", paths["day"]])
     if not quiet:
         _pipe(["discord"], "post_discord.py")
-    if label == "evening":
-        day = day_of(local_dt(snap))
-        email_day(history, day, cfg_label)
-        if day.weekday() == 6:
-            email_week(history, day, cfg_label)
+        if label in DISCORD_FLOW_LABELS:
+            _send(json.dumps(build_discord_day(s, generated)), "post_discord.py")
+        if label == "evening" and day.weekday() == 6:
+            w = summarize_week(history, day)
+            _send(json.dumps(build_discord_week(w, generated)), "post_discord.py")
+    if label == "evening" and _flow_email_enabled():
+        email_day(s, render_day_html(s, None, generated, d), cfg_label)
+        if "week" in paths:
+            w = summarize_week(history, day)
+            _send(email_payload(f"{cfg_label} \u2014 Weekly flow: listened {dur(w['listened_seconds'])}",
+                                render_week_html(w, None, generated, d)), "send_email.py")
     return snap
 
 
@@ -600,6 +749,8 @@ def main(argv=None):
         p = sub.add_parser(name, help=f"render the {name} flow from history")
         p.add_argument("--date")
         p.add_argument("--format", choices=("chat", "html", "email"), default="chat")
+        p.add_argument("--with-queue", action="store_true",
+                       help="append the latest queue report (reads the last run's JSON)")
 
     p = sub.add_parser("tick", help="hourly scheduler entry point")
     p.add_argument("--dry-run", action="store_true")
@@ -614,22 +765,23 @@ def main(argv=None):
 
     history = load_history()
     day = _arg_day(args.date)
+    d = json.load(open(RUN_JSON)) if args.with_queue and os.path.exists(RUN_JSON) else None
     if args.cmd == "day":
         s = summarize_day(history, day)
         if args.format == "chat":
             print(render_day_chat(s))
         elif args.format == "html":
-            print(render_day_html(s))
+            print(render_day_html(s, None, None, d))
         else:
-            print(email_payload(f"Daily flow, {pretty_day(day)}", render_day_html(s)))
+            print(email_payload(f"Daily flow, {pretty_day(day)}", render_day_html(s, None, None, d)))
     else:
         w = summarize_week(history, day)
         if args.format == "chat":
             print(render_week_chat(w))
         elif args.format == "html":
-            print(render_week_html(w))
+            print(render_week_html(w, None, None, d))
         else:
-            print(email_payload("Weekly flow", render_week_html(w)))
+            print(email_payload("Weekly flow", render_week_html(w, None, None, d)))
     return 0
 
 
