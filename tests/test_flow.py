@@ -289,7 +289,9 @@ class RenderTests(unittest.TestCase):
 
     def test_headline_has_the_papa_voice(self):
         self.assertIn("That papa listened to", flow.day_headline(self.s))
-        self.assertIn("the furballs are proud", flow.mood(-100))
+        self.assertEqual(flow.mood(-100), "")
+        self.assertNotIn("furballs are proud", flow.day_headline(self.s))
+        self.assertTrue(flow.day_headline(self.s).endswith("today 🎧") or "backlog" in flow.day_headline(self.s) or "held" in flow.day_headline(self.s))
         self.assertIn("held the line", flow.mood(0))
         self.assertIn("the backlog crept up", flow.mood(100))
 

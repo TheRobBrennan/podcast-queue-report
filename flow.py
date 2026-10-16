@@ -261,18 +261,18 @@ def behind_phrase(delta):
 def mood(delta):
     """The tagline: how the day treated the backlog."""
     if round(delta) < 0:
-        return "and the furballs are proud"
+        return ""
     if round(delta) == 0:
         return "and held the line"
     return "and the backlog crept up"
 
 
 def day_headline(s):
-    return f"That papa listened to {dur(s['listened_seconds'])} today {mood(s['behind_delta'])} 🎧"
+    return " ".join(f"That papa listened to {dur(s['listened_seconds'])} today {mood(s['behind_delta'])}".split()) + " 🎧"
 
 
 def week_headline(w):
-    return f"That papa listened to {dur(w['listened_seconds'])} this week {mood(w['behind_delta'])} 🎧"
+    return " ".join(f"That papa listened to {dur(w['listened_seconds'])} this week {mood(w['behind_delta'])}".split()) + " 🎧"
 
 
 def emoji_row_html():
