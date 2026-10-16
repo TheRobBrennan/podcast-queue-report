@@ -957,7 +957,7 @@ def arrivals_card(s, qs, tz=None):
     yellow when about even, red when more arrived than you finished."""
     tone = arrivals_tone(s["arrivals_seconds"], s["listened_seconds"])
     bg = {"better": "#dbeafe", "same": QUEUE_TONES["same"][0], "worse": QUEUE_TONES["worse"][0]}[tone]
-    sub = f"\u25b2 {dur_n(s['arrivals_seconds'], 2)} of audio"
+    sub = f"+ {dur_n(s['arrivals_seconds'], 2)} of audio"
     return pill_card("New episodes", s["arrivals_count"], bg, ARRIVAL_COLORS[tone], html.escape(sub))
 
 
