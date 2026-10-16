@@ -376,11 +376,11 @@ class StoryTests(unittest.TestCase):
             return flow.queue_card(snap("2026-10-16T09:00", queue_count=start),
                                    snap("2026-10-16T18:00", queue_count=end), NY)
         self.assertIn("#dcfce7", card(124, 121))
-        self.assertIn("▼ 3 episodes since 9:00am EDT", card(124, 121))
+        self.assertIn("▼ 3 since 9:00am EDT", card(124, 121))
         self.assertIn("#fef9c3", card(121, 121))
         self.assertIn("No change since 9:00am EDT", card(121, 121))
         self.assertIn("#fee2e2", card(121, 124))
-        self.assertIn("▲ 3 episodes since 9:00am EDT", card(121, 124))
+        self.assertIn("▲ 3 since 9:00am EDT", card(121, 124))
 
     def test_listening_counts_from_the_first_reading_of_the_day(self):
         # the first reading's window reaches back before the day's first reading
@@ -396,8 +396,8 @@ class StoryTests(unittest.TestCase):
     def test_every_card_says_since_the_same_time(self):
         s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
         page = flow.render_day_html(s, NY)
-        self.assertEqual(page.count("since 9:00am EDT"), 3)  # finished, queue, arrivals
-        self.assertIn("episodes finished", page)
+        self.assertEqual(page.count("since 9:00am EDT"), 1)  # the queue card names its starting point
+        self.assertIn("Finished episodes", page)
 
     def test_every_card_value_is_the_same_size_and_never_wraps(self):
         for text in ("6 hrs 21 mins", "1 week 2 days 10 hrs 48 mins"):
@@ -793,12 +793,12 @@ class CardGridTests(unittest.TestCase):
             self.assertIn("\ufe0f\u20e3", card)
             self.assertIn("border-radius:12px;padding:6px 14px", card)   # the same pill on all three
         self.assertIn("#ede9fe", flow.finished_card(s, qs, NY))
-        self.assertIn("10 episodes finished", flow.finished_card(s, qs, NY))
+        self.assertIn("Finished episodes", flow.finished_card(s, qs, NY))
 
     def test_the_page_has_three_cards_and_no_oldest_episode_card(self):
         history = [snap("2026-10-16T09:00", "morning", 120), snap("2026-10-16T12:00", "manual", 118, played_seconds=600)]
         page = flow.render_day_html(flow.summarize_day(history, datetime.date(2026, 10, 16), NY), NY)
-        for card in ("Finished", "Episodes in your queue", "New arrivals"):
+        for card in ("Finished episodes", "Episodes in your queue", "New episodes"):
             self.assertIn(card, page)
         self.assertNotIn("oldest unplayed episode", page.lower())
 

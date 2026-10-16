@@ -939,17 +939,17 @@ def queue_card(qs, qe, tz=None):
     since = since_label(qs, tz)
     n = abs(delta)
     noun = f"{n} episode" + ("" if n == 1 else "s")
-    sub = {"better": f"{arrow} {noun} {since}",
+    sub = {"better": f"{arrow} {n} {since}",
            "same": f"{arrow} No change {since}",
-           "worse": f"{arrow} {noun} {since}"}[tone]
+           "worse": f"{arrow} {n} {since}"}[tone]
     return pill_card("Episodes in your queue", qe["queue_count"], bg, fg, html.escape(sub))
 
 
 def finished_card(s, qs, tz=None):
     """How many episodes you finished, in indigo, with the audio they add up to."""
     n = s["listened_count"]
-    sub = f"{episodes_phrase(n)} finished · {dur_n(s['listened_seconds'], 3)} of audio {since_label(qs, tz)}"
-    return pill_card("Finished", n, "#ede9fe", "#6d28d9", html.escape(sub))
+    sub = f"{dur_n(s['listened_seconds'], 2)} of audio"
+    return pill_card("Finished episodes", n, "#ede9fe", "#6d28d9", html.escape(sub))
 
 
 def arrivals_card(s, qs, tz=None):
@@ -957,8 +957,8 @@ def arrivals_card(s, qs, tz=None):
     yellow when about even, red when more arrived than you finished."""
     tone = arrivals_tone(s["arrivals_seconds"], s["listened_seconds"])
     bg = {"better": "#dbeafe", "same": QUEUE_TONES["same"][0], "worse": QUEUE_TONES["worse"][0]}[tone]
-    sub = f"\u25b2 {dur_n(s['arrivals_seconds'], 3)} of new episodes {since_label(qs, tz)}"
-    return pill_card("New arrivals", s["arrivals_count"], bg, ARRIVAL_COLORS[tone], html.escape(sub))
+    sub = f"\u25b2 {dur_n(s['arrivals_seconds'], 2)} of audio"
+    return pill_card("New episodes", s["arrivals_count"], bg, ARRIVAL_COLORS[tone], html.escape(sub))
 
 
 def utcnow():
