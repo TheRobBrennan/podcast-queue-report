@@ -81,7 +81,7 @@ def parse_fmt_seconds(text):
     return total
 
 
-def queue_by_show(d, top=6):
+def queue_by_show(d, top=None):
     """The queue grouped by show: how many episodes and how much listening each holds."""
     shows = {}
     for e in d["queue"].get("episodes", []):
@@ -90,7 +90,7 @@ def queue_by_show(d, top=6):
         row["count"] += 1
         row["seconds"] += parse_fmt_seconds(e.get("duration_fmt"))
     ranked = sorted(shows.values(), key=lambda r: (-r["count"], -r["seconds"]))
-    return ranked[:top]
+    return ranked[:top] if top else ranked
 
 
 def snapshot_from_run(d, label, source="live"):
@@ -406,10 +406,67 @@ def highlights(s, tz=None):
     return out
 
 
-def show_share(snap):
-    shows = snap.get("by_show") or []
-    total = snap["queue_count"] or 1
-    return [(r["podcast"], r["count"], 100.0 * r["count"] / total) for r in shows]
+PILE_COLORS = ("#a78bfa", "#38bdf8", "#34d399", "#fbbf24", "#cbd5e1")
+
+
+def load_show_groups(raw=None):
+    """SHOW_GROUPS from .env: 'name=feed|feed;name=feed', matched as
+    case-insensitive substrings of the show name. Lets several feeds that are
+    really one thing (three Kraken shows) read as one slice of the queue."""
+    raw = os.environ.get("SHOW_GROUPS", "") if raw is None else raw
+    groups = []
+    for part in raw.split(";"):
+        if "=" not in part:
+            continue
+        name, pats = part.split("=", 1)
+        pats = [x.strip().lower() for x in pats.split("|") if x.strip()]
+        if name.strip() and pats:
+            groups.append((name.strip(), pats))
+    return groups
+
+
+def group_shows(by_show, groups):
+    out = {}
+    for r in by_show:
+        key = r["podcast"]
+        for name, pats in groups:
+            if any(x in r["podcast"].lower() for x in pats):
+                key = name
+                break
+        row = out.setdefault(key, {"name": key, "count": 0, "seconds": 0, "feeds": 0})
+        row["count"] += r["count"]
+        row["seconds"] += r["seconds"]
+        row["feeds"] += 1
+    return sorted(out.values(), key=lambda r: (-r["seconds"], -r["count"]))
+
+
+def pile_segments(snap, groups=None, top=6):
+    """The queue as slices of its own total: the top groups by listening time
+    plus 'Everything else', so the slices always add up to the whole."""
+    groups = load_show_groups() if groups is None else groups
+    ranked = group_shows(snap.get("by_show") or [], groups)
+    total = sum(r["seconds"] for r in ranked) or 1
+    segs = [dict(r, pct=100.0 * r["seconds"] / total) for r in ranked[:top]]
+    rest = ranked[top:]
+    if rest:
+        secs = sum(r["seconds"] for r in rest)
+        segs.append({"name": "Everything else", "count": sum(r["count"] for r in rest),
+                     "seconds": secs, "feeds": sum(r["feeds"] for r in rest),
+                     "pct": 100.0 * secs / total, "other": True})
+    return segs, total
+
+
+def pile_insight(segs):
+    if not segs:
+        return ""
+    top = segs[0]
+    return (f"Clear all of {top['name']} and the queue shrinks by {dur_n(top['seconds'])} "
+            f"({top['pct']:.0f}% of it)")
+
+
+def pile_line(seg):
+    feeds = f" · {seg['feeds']} feeds" if seg["feeds"] > 1 and not seg.get("other") else ""
+    return f"{seg['count']} eps · {dur_n(seg['seconds'])} · {seg['pct']:.0f}%{feeds}"
 
 
 def bar_chat(value, peak, width=10):
@@ -443,8 +500,10 @@ def render_day_chat(s, tz=None):
     if snap:
         lines.append("")
         lines.append("What's piling up:")
-        for name, count, pct in show_share(snap)[:5]:
-            lines.append(f"  {count:>3} eps  {pct:>3.0f}%  {name}")
+        segs, _ = pile_segments(snap)
+        for seg in segs:
+            lines.append(f"  {seg['name']}: {pile_line(seg)}")
+        lines.append(f"  {pile_insight(segs)}")
     if s.get("now_playing"):
         np = s["now_playing"]
         lines.append(f"▶ Now playing: {np['title']} — {np['podcast']}")
@@ -522,20 +581,13 @@ def generated_pill(generated, tz=None):
 
 
 def queue_section_html(d):
-    """The main report's body (grade line, now playing, the queue with artwork)
-    for appending under the flow summary. Its own emoji row is dropped, since
-    the flow page already opens with the whole cast."""
-    page = rr.build_html(d)
-    body = page.split("<body", 1)[1].split(">", 1)[1].rsplit("</body>", 1)[0]
-    body = re.sub(
-        r'<div style="text-align:center;font-size:28px;line-height:1.3;margin-bottom:16px;">.*?</div>',
-        "", body, count=1, flags=re.S,
-    )
+    """The whole unplayed queue, every episode with its artwork, for appending
+    under the flow summary (the web page and the optional email)."""
     return (
         '<div style="border-top:2px dashed #cbd5e1;margin:40px 0 28px;"></div>'
         '<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;'
         'text-transform:uppercase;letter-spacing:0.6px;margin-bottom:20px;">The unplayed queue</div>'
-        + body
+        + rr.build_html(d, embed=True)
     )
 
 
@@ -617,20 +669,32 @@ def piling_up_html(s):
     snap = s.get("by_show_snapshot")
     if not snap:
         return ""
-    peak = max([c for _, c, _ in show_share(snap)] + [1])
-    rows = ""
-    for name, count, pct in show_share(snap)[:5]:
-        rows += (
-            '<div style="display:flex;align-items:center;margin:6px 0;font-size:13px;">'
-            f'<div style="flex:0 0 46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{html.escape(name)}</div>'
-            f'<div style="flex:1;padding:0 10px;"><div style="height:10px;border-radius:5px;background:#a78bfa;'
-            f'width:{max(4, round(100 * count / peak))}%;"></div></div>'
-            f'<div style="flex:0 0 78px;text-align:right;color:#64748b;">{count} eps · {pct:.0f}%</div></div>'
-        )
+    segs, _ = pile_segments(snap)
+    if not segs:
+        return ""
+    bar = "".join(
+        f'<div title="{html.escape(seg["name"])}" style="width:{max(seg["pct"], 1):.2f}%;'
+        f'background:{PILE_COLORS[min(i, len(PILE_COLORS) - 1)]};height:18px;"></div>'
+        for i, seg in enumerate(segs)
+    )
+    legend = "".join(
+        '<div style="display:flex;align-items:center;margin:8px 0;font-size:13px;">'
+        f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:10px;'
+        f'background:{PILE_COLORS[min(i, len(PILE_COLORS) - 1)]};"></span>'
+        f'<span style="flex:1;font-weight:600;">{html.escape(seg["name"])}</span>'
+        f'<span style="color:#64748b;">{html.escape(pile_line(seg))}</span></div>'
+        for i, seg in enumerate(segs)
+    )
+    inner = (
+        '<div style="display:flex;border-radius:9px;overflow:hidden;margin-bottom:14px;">' + bar + '</div>'
+        + legend
+        + f'<div style="margin-top:12px;padding-top:12px;border-top:1px solid #f1f5f9;font-size:13px;color:#475569;">'
+          f'💡 {html.escape(pile_insight(segs))}</div>'
+    )
     return (
         '<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
         'margin:24px 0 10px;">What&rsquo;s piling up</div>'
-        + _white_card(rows, 16)
+        + _white_card(inner, 16)
     )
 
 
@@ -749,7 +813,9 @@ def build_discord_day(s, generated=None, tz=None):
     fields.append(_field("__\U0001f552 The shape of your day__", shape[:1000], inline=False))
     snap = s.get("by_show_snapshot")
     if snap:
-        piling = "\n".join(f"`{c:>3}` {n[:38]} \u00b7 {pct:.0f}%" for n, c, pct in show_share(snap)[:5])
+        segs, _ = pile_segments(snap)
+        piling = "\n".join(f"**{seg['name'][:40]}** \u00b7 {pile_line(seg)}" for seg in segs)
+        piling += f"\n\U0001f4a1 {pile_insight(segs)}"
         fields.append(_field("__\U0001f4da What's piling up__", piling[:1000], inline=False))
     if s.get("now_playing"):
         np = s["now_playing"]

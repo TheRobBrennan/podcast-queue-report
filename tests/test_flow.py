@@ -230,6 +230,30 @@ class StoryTests(unittest.TestCase):
         self.assertEqual(flow.parse_fmt_seconds("1\xa0week 2\xa0days"), 604800 + 172800)
         self.assertEqual(flow.parse_fmt_seconds(""), 0)
 
+    def test_show_groups_fold_feeds_into_one_slice(self):
+        groups = flow.load_show_groups("🏒 Kraken=Seattle Kraken Audio Network|Beneath The Waves;Other=zzz")
+        self.assertEqual(groups[0][0], "🏒 Kraken")
+        by_show = [
+            {"podcast": "Seattle Kraken Audio Network", "count": 25, "seconds": 36000},
+            {"podcast": "Beneath The Waves: A Seattle Kraken Podcast", "count": 4, "seconds": 14000},
+            {"podcast": "RedHanded", "count": 6, "seconds": 9000},
+        ]
+        grouped = flow.group_shows(by_show, groups)
+        self.assertEqual((grouped[0]["name"], grouped[0]["count"], grouped[0]["seconds"], grouped[0]["feeds"]),
+                         ("🏒 Kraken", 29, 50000, 2))
+        self.assertEqual(grouped[1]["name"], "RedHanded")
+
+    def test_slices_add_up_to_the_whole_with_an_everything_else(self):
+        by_show = [{"podcast": f"Show {i}", "count": 1, "seconds": 1000} for i in range(8)]
+        segs, total = flow.pile_segments({"by_show": by_show}, groups=[], top=4)
+        self.assertEqual(len(segs), 5)
+        self.assertTrue(segs[-1].get("other"))
+        self.assertAlmostEqual(sum(s["pct"] for s in segs), 100.0)
+        self.assertIn("Clear all of Show", flow.pile_insight(segs))
+
+    def test_no_by_show_data_means_no_section(self):
+        self.assertEqual(flow.piling_up_html({"by_show_snapshot": None}), "")
+
     def test_queue_by_show_groups_and_ranks(self):
         d = {"queue": {"episodes": [
             {"podcast": "A", "duration_fmt": "1 hr"}, {"podcast": "A", "duration_fmt": "30 mins"},
@@ -279,7 +303,7 @@ class StoryTests(unittest.TestCase):
 
     def test_story_shows_up_in_every_format(self):
         chat = flow.render_day_chat(self.s, NY)
-        for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest listening stretch"):
+        for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest listening stretch", "Clear all of"):
             self.assertIn(needle, chat)
         page = flow.render_day_html(self.s, NY)
         for needle in ("What&rsquo;s piling up", "Pregame", "how old your oldest unplayed episode is"):
@@ -302,6 +326,18 @@ class GeneratedAndQueueTests(unittest.TestCase):
     def test_web_report_has_the_generated_pill_at_top_and_bottom(self):
         page = flow.render_day_html(self.s, NY, self.generated)
         self.assertEqual(page.count("Generated Friday, October 16th, 2026 @ 4:18pm EDT"), 2)
+
+    def test_the_whole_queue_is_in_the_page_not_collapsed(self):
+        d = minimal_run_json()
+        d["queue"]["episodes"] = [
+            {"title": f"Episode {i}", "podcast": "Show", "duration_fmt": "10 mins",
+             "pubdate": "2026-10-10T07:00:00", "in_progress": False}
+            for i in range(30)
+        ]
+        d["queue"]["count"] = 30
+        page = flow.render_day_html(self.s, NY, self.generated, d)
+        self.assertEqual(sum(f"Episode {i}" in page for i in range(30)), 30)
+        self.assertNotIn("<details", page)
 
     def test_queue_section_is_appended_without_a_second_cast_row(self):
         page = flow.render_day_html(self.s, NY, self.generated, minimal_run_json())
