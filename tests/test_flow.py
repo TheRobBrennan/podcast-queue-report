@@ -309,7 +309,7 @@ class StoryTests(unittest.TestCase):
     def test_context_compares_to_yesterday_at_the_same_time_of_day(self):
         self.assertEqual(self.s["yesterday_listened"], 3000)
         lines = " ".join(line for _, line in flow.vs_lines(self.s, NY))
-        self.assertIn("You've listened 4 hrs 10 mins more than yesterday at this time", lines)
+        self.assertIn("You've finished 4 hrs 10 mins more than yesterday at this time", lines)
         self.assertNotIn("your usual", lines)  # one earlier day is not an average
 
     def test_an_average_needs_two_earlier_days_and_stops_at_the_same_hour(self):
@@ -328,8 +328,8 @@ class StoryTests(unittest.TestCase):
         self.assertEqual(s["recent_days"], 2)
         self.assertEqual(s["recent_average"], 5400)
         lines = " ".join(line for _, line in flow.vs_lines(s, NY))
-        self.assertIn("You've listened 1 hr 30 mins less than yesterday at this time", lines)
-        self.assertIn("You're 1 hr below your usual listening at this time", lines)
+        self.assertIn("You've finished 1 hr 30 mins less than yesterday at this time", lines)
+        self.assertIn("You're 1 hr below your usual at this time", lines)
 
     def test_now_playing_card_has_artwork_links_progress_and_up_next(self):
         np = {"title": "The Nightmare Cure", "podcast": "MrBallen", "episode_url": "https://e/1",
@@ -397,7 +397,7 @@ class StoryTests(unittest.TestCase):
         s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
         page = flow.render_day_html(s, NY)
         self.assertEqual(page.count("since 9:00am EDT"), 4)  # listened, queue, oldest, arrivals
-        self.assertIn("episodes played since 9:00am EDT", page)
+        self.assertIn("episodes finished since 9:00am EDT", page)
 
     def test_oldest_episode_line_is_green_yellow_or_red_like_the_queue(self):
         since = "since 9:00am EDT"
@@ -440,7 +440,7 @@ class StoryTests(unittest.TestCase):
         ]
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
         text = " ".join(line for _, line in flow.highlights(s, NY))
-        self.assertIn("Biggest listening stretch: 2 hrs, 9:00am to 12:00pm", text)
+        self.assertIn("Biggest stretch: 3 episodes finished (2 hrs of audio), 9:00am to 12:00pm", text)
         # 121-118 played 1 = 4 episodes, 310000-295000+600 = 15600s
         self.assertIn("Biggest arrival burst: 4 episodes (4 hrs 20 mins), 12:00pm to 2:00pm", text)
 
@@ -457,7 +457,7 @@ class StoryTests(unittest.TestCase):
         self.assertEqual({p["name"]: p["seconds"] for p in s["by_part"]},
                          {"afternoon": 9000, "morning": 1800, "evening": 675, "late night": 225})
         text = " ".join(line for _, line in flow.highlights(s, NY))
-        self.assertIn("Your peak was afternoon (12pm to 5pm): 2 hrs 30 mins of 3 hrs 15 mins (77%)", text)
+        self.assertIn("Your peak was afternoon (12pm to 5pm): 2 hrs 30 mins of the 3 hrs 15 mins you finished (77%)", text)
 
     def test_a_window_that_straddles_noon_is_split_between_morning_and_afternoon(self):
         history = [
@@ -496,7 +496,7 @@ class StoryTests(unittest.TestCase):
 
     def test_story_shows_up_in_every_format(self):
         chat = flow.render_day_chat(self.s, NY)
-        for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest listening stretch"):
+        for needle in ("What's piling up", "Kraken Audio", "☀️ Morning", "🌙 Evening", "Biggest stretch"):
             self.assertIn(needle, chat)
         page = flow.render_day_html(self.s, NY)
         for needle in ("What&rsquo;s piling up", "Pregame", "The oldest unplayed episode in your queue"):
@@ -547,7 +547,7 @@ class GeneratedAndQueueTests(unittest.TestCase):
         payload = flow.build_discord_day(self.s, self.generated, NY)
         embed = payload["embeds"][0]
         self.assertIn("🐷", embed["title"])
-        self.assertIn("That papa listened to", embed["description"])
+        self.assertIn("That papa got through", embed["description"])
         self.assertIn("Generated Friday, October 16th, 2026 @ 4:18pm EDT", embed["description"])
         self.assertEqual(embed["timestamp"], "2026-10-16T20:18:00")
         names = [f["name"] for f in embed["fields"]]
@@ -680,17 +680,17 @@ class WindowStoryTests(unittest.TestCase):
 
     def test_listening_that_shrinks_the_queue(self):
         text, tone, delta = flow.window_story(self.window(3, 9000, -3, 0, 122))
-        self.assertEqual(text, "Listened to 3 episodes (2 hrs 30 mins). The queue decreased from 125 to 122 episodes")
+        self.assertEqual(text, "Finished 3 episodes (2 hrs 30 mins of audio). The queue decreased from 125 to 122 episodes")
         self.assertEqual((tone, delta), ("better", -3))
 
     def test_listening_outpaced_by_arrivals(self):
         text, tone, delta = flow.window_story(self.window(1, 2400, 2, 3, 126))
-        self.assertEqual(text, "Listened to 1 episode (40 mins). The queue increased from 124 to 126 episodes")
+        self.assertEqual(text, "Finished 1 episode (40 mins of audio). The queue increased from 124 to 126 episodes")
         self.assertEqual(tone, "worse")
 
     def test_arrivals_keeping_pace(self):
         text, tone, _ = flow.window_story(self.window(2, 3000, 0, 2, 121))
-        self.assertEqual(text, "Listened to 2 episodes (50 mins). The queue stayed at 121 episodes")
+        self.assertEqual(text, "Finished 2 episodes (50 mins of audio). The queue stayed at 121 episodes")
         self.assertEqual(tone, "same")
 
     def test_a_quiet_window(self):
@@ -711,10 +711,60 @@ class WindowStoryTests(unittest.TestCase):
         page = flow.render_day_html(s, NY)
         self.assertIn("4:00\u20136:00pm", page)
         self.assertIn("8:00\u201310:00am", page)
-        self.assertIn("Listened to 3 episodes (2 hrs 30 mins). The queue decreased from 120 to 117 episodes", page)
+        self.assertIn("Finished 3 episodes (2 hrs 30 mins of audio). The queue decreased from 120 to 117 episodes", page)
         self.assertIn('src="https://a/1.jpg"', page)
         self.assertIn('href="https://e/1"', page)
-        self.assertIn("you listened to 3 episodes (2 hrs 30 mins), the queue got 2 hrs 46 mins shorter, and your oldest episode improved by 11 hrs 6 mins", page)
+        self.assertIn("you finished 3 episodes (2 hrs 30 mins of audio), the queue got 2 hrs 46 mins shorter, and your oldest episode improved by 11 hrs 6 mins", page)
+
+
+class ChartAndProgressTests(unittest.TestCase):
+    def setUp(self):
+        self.history = [
+            snap("2026-10-16T06:00", "morning", 124, 300000, 900000, 0, 0),
+            snap("2026-10-16T10:00", "dash-start", 126, 305000, 900000, 1, 600),
+            snap("2026-10-16T14:00", "manual", 122, 290000, 880000, 4, 9000),
+            snap("2026-10-16T18:00", "dash-end", 121, 288000, 870000, 1, 1200),
+        ]
+        self.s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
+
+    def test_queue_chart_draws_the_line_the_dash_and_the_labels(self):
+        svg = flow.queue_chart_svg(self.s, NY)
+        self.assertIn("<polyline", svg)
+        self.assertEqual(svg.count("<circle"), 4)
+        self.assertIn("🚐 Dash", svg)
+        self.assertIn("121 episodes now, down 3 from 124", svg)
+        for hour in ("6am", "6pm"):
+            self.assertIn(f">{hour}<", svg)
+
+    def test_chart_needs_two_readings_and_tolerates_a_crowd(self):
+        self.assertEqual(flow.queue_chart_svg(flow.summarize_day(self.history[:1], datetime.date(2026, 10, 16), NY), NY), "")
+        crowd = [snap("2026-10-16T06:00", "morning", 124)] + [
+            snap(f"2026-10-16T17:{m:02d}", "manual", 121) for m in range(0, 30, 3)]
+        s = flow.summarize_day(crowd, datetime.date(2026, 10, 16), NY)
+        svg = flow.queue_chart_svg(s, NY)
+        self.assertLess(svg.count("<circle"), len(crowd))   # bunched dots are thinned
+
+    def test_in_progress_episodes_and_their_bars(self):
+        d = {"queue": {"episodes": [
+            {"title": "Half Done", "podcast": "Show", "in_progress": True, "duration_fmt": "1 hr",
+             "remaining_fmt": "30 mins", "artwork_url": "https://a/h.jpg", "episode_url": "https://e/h"},
+            {"title": "Barely Started", "podcast": "Other", "in_progress": True, "duration_fmt": "40 mins",
+             "remaining_fmt": "36 mins"},
+            {"title": "Untouched", "podcast": "Show", "in_progress": False, "duration_fmt": "20 mins"},
+        ]}}
+        items = flow.in_progress_episodes(d)
+        self.assertEqual([(i["title"], i["pct"]) for i in items], [("Half Done", 50), ("Barely Started", 10)])
+        page = flow.in_progress_html(items)
+        for needle in ("Episodes in progress", "50%", "30 mins left", 'src="https://a/h.jpg"', 'href="https://e/h"', "width:10%"):
+            self.assertIn(needle, page)
+        self.assertEqual(flow.in_progress_html([]), "")
+
+    def test_snapshot_keeps_the_episodes_in_progress(self):
+        d = minimal_run_json()
+        d["queue"]["episodes"] = [{"title": "Half Done", "podcast": "Show", "in_progress": True,
+                                   "duration_fmt": "1 hr", "remaining_fmt": "15 mins",
+                                   "pubdate": "2026-10-10T07:00:00"}]
+        self.assertEqual(flow.snapshot_from_run(d, "pulse")["in_progress"][0]["pct"], 75)
 
 
 class RenderTests(unittest.TestCase):
@@ -731,7 +781,7 @@ class RenderTests(unittest.TestCase):
         text = flow.render_day_chat(self.s, NY)
         self.assertIn("Daily Flow — Friday, Oct 16", text)
         self.assertIn("🚐 Dash 10:00am–6:00pm", text)
-        self.assertIn("Listened:", text)
+        self.assertIn("Finished:", text)
 
     def test_the_whole_cast_is_in_every_report(self):
         for emoji in ("🐷", "🦄", "🏝️"):
@@ -739,7 +789,7 @@ class RenderTests(unittest.TestCase):
             self.assertIn(emoji, flow.render_day_html(self.s, NY))
 
     def test_headline_has_the_papa_voice(self):
-        self.assertIn("That papa listened to", flow.day_headline(self.s))
+        self.assertIn("That papa got through", flow.day_headline(self.s))
         self.assertEqual(flow.mood(-100), "")
         self.assertNotIn("furballs are proud", flow.day_headline(self.s))
         self.assertTrue(flow.day_headline(self.s).endswith("today 🎧") or "backlog" in flow.day_headline(self.s) or "held" in flow.day_headline(self.s))
