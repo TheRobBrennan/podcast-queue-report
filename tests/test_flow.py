@@ -208,6 +208,17 @@ class RenderTests(unittest.TestCase):
         self.assertIn("🚐 Dash 10:00am–6:00pm", text)
         self.assertIn("Listened:", text)
 
+    def test_the_whole_cast_is_in_every_report(self):
+        for emoji in ("🐷", "🦄", "🏝️"):
+            self.assertIn(emoji, flow.render_day_chat(self.s, NY))
+            self.assertIn(emoji, flow.render_day_html(self.s, NY))
+
+    def test_headline_has_the_papa_voice(self):
+        self.assertIn("That papa listened to", flow.day_headline(self.s))
+        self.assertIn("the furballs are proud", flow.mood(-100))
+        self.assertIn("held the line", flow.mood(0))
+        self.assertIn("the backlog crept up", flow.mood(100))
+
     def test_html_is_a_page_and_escapes(self):
         page = flow.render_day_html(self.s, NY)
         self.assertTrue(page.startswith("<!DOCTYPE html>"))

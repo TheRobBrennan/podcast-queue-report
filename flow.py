@@ -254,12 +254,38 @@ def behind_phrase(delta):
     return f"{'improved' if delta < 0 else 'slipped'} {dur(delta)}"
 
 
+def mood(delta):
+    """The tagline: how the day treated the backlog."""
+    if round(delta) < 0:
+        return "and the furballs are proud"
+    if round(delta) == 0:
+        return "and held the line"
+    return "and the backlog crept up"
+
+
+def day_headline(s):
+    return f"That papa listened to {dur(s['listened_seconds'])} today {mood(s['behind_delta'])} 🎧"
+
+
+def week_headline(w):
+    return f"That papa listened to {dur(w['listened_seconds'])} this week {mood(w['behind_delta'])} 🎧"
+
+
+def emoji_row_html():
+    return "".join(
+        f'<span style="display:inline-block;margin:5px 10px;">{e}</span>'
+        for e in ps.EMOJI_POOL
+    )
+
+
 def render_day_chat(s, tz=None):
     if not s["snapshots"]:
         return f"🎧 Daily flow — {pretty_day(s['day'])}\nNo snapshots recorded."
     qs, qe = s["queue_start"], s["queue_end"]
     n = len(s["snapshots"])
     lines = [
+        ps.emoji_header(),
+        day_headline(s),
         f"🎧 Daily flow — {pretty_day(s['day'])}",
         f"Listened: {dur(s['listened_seconds'])} · {s['listened_count']} episodes played · {n} snapshots",
         f"Queue: {qs['queue_count']} → {qe['queue_count']} episodes "
@@ -296,6 +322,8 @@ def render_week_chat(w, tz=None):
     first, last = w["days"][0]["day"], w["days"][-1]["day"]
     best = w["best"]
     lines = [
+        ps.emoji_header(),
+        week_headline(w),
         f"🎧 Weekly flow — {first.strftime('%b %-d')} to {last.strftime('%b %-d')}",
         f"Listened: {dur(w['listened_seconds'])} across {len(w['days'])} days, "
         f"{dur(w['average_seconds'])} a day on average",
@@ -326,18 +354,24 @@ def _card(label, value, sub=""):
     )
 
 
-def _page(title, body):
+def _page(title, body, headline=None):
+    headline_html = (
+        f'<div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:8px;">'
+        f'{html.escape(headline)}</div>' if headline else ""
+    )
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>{html.escape(title)}</title></head>
 <body style="margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
 <div style="max-width:680px;margin:0 auto;padding:32px 20px;">
-<div style="font-size:26px;font-weight:800;margin-bottom:4px;">{html.escape(title)}</div>
+<div style="text-align:center;font-size:28px;line-height:1.3;margin-bottom:16px;">{emoji_row_html()}</div>
+{headline_html}
+<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;">{html.escape(title)}</div>
 {body}
 </div></body></html>"""
 
 
 def render_day_html(s, tz=None):
-    title = f"🎧 Daily flow — {pretty_day(s['day'])}"
+    title = f"Daily flow — {pretty_day(s['day'])}"
     if not s["snapshots"]:
         return _page(title, "<p>No snapshots recorded.</p>")
     qs, qe = s["queue_start"], s["queue_end"]
@@ -396,11 +430,11 @@ def render_day_html(s, tz=None):
         "<th style='padding:12px;'>Played in window</th></tr>"
         f"{body_rows}</table>"
     )
-    return _page(title, "".join(parts))
+    return _page(title, "".join(parts), day_headline(s))
 
 
 def render_week_html(w, tz=None):
-    title = "🎧 Weekly flow"
+    title = "Weekly flow"
     if not w["days"]:
         return _page(title, "<p>No snapshots recorded this week.</p>")
     best = w["best"]
@@ -429,7 +463,7 @@ def render_week_html(w, tz=None):
         "<th style='padding:12px;'>Day</th><th style='padding:12px;'>Listened</th>"
         f"<th style='padding:12px;'>Queue</th></tr>{day_rows}</table>"
     )
-    return _page(title, body)
+    return _page(title, body, week_headline(w))
 
 
 def email_payload(subject, body_html):
