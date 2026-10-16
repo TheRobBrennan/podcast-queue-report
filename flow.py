@@ -167,6 +167,23 @@ def arrivals_seconds(prev, cur):
     return max(0, (cur["queue_seconds"] - prev["queue_seconds"]) + cur["played_seconds"])
 
 
+def episode_progress(prev, cur):
+    """How far you moved through the episode that was playing at both readings,
+    or None when it wasn't the same episode or the position wasn't recorded.
+    Forward is progress; backward means you went back and replayed."""
+    a, b = prev.get("now_playing") or {}, cur.get("now_playing") or {}
+    if not a.get("title") or a.get("title") != b.get("title") or a.get("podcast") != b.get("podcast"):
+        return None
+    if a.get("elapsed_seconds") is None or b.get("elapsed_seconds") is None:
+        return None
+    dur_s = b.get("duration_seconds") or a.get("duration_seconds") or 0
+
+    def pct(x):
+        return round(100 * min(x, dur_s) / dur_s) if dur_s > 0 else None
+    return {"delta": b["elapsed_seconds"] - a["elapsed_seconds"],
+            "from_pct": pct(a["elapsed_seconds"]), "to_pct": pct(b["elapsed_seconds"])}
+
+
 def arrivals_count(prev, cur):
     """Estimated episodes that landed between two snapshots: the change in
     queue size plus the episodes played out of it."""
@@ -235,6 +252,7 @@ def summarize_day(history, day, tz=None):
     for sn in snaps:
         windows.append({
             "snap": sn,
+            "progress": episode_progress(prev, sn) if prev else None,
             "first": prev is None,
             "played": 0 if prev is None else sn["played_seconds"],
             "arrivals": arrivals_seconds(prev, sn) if prev else None,
@@ -548,7 +566,16 @@ def window_story(w):
         return f"First reading of the day · {episodes_phrase(q)} in the queue", None, None
     played, n = w["played"], sn["played_count"]
     qd, arr = w["queue_delta"], w.get("arrivals_count") or 0
-    head = f"Listened to {episodes_phrase(n)} ({dur_n(played)})" if played > 0 else "Nothing played"
+    if played > 0:
+        head = f"Listened to {episodes_phrase(n)} ({dur_n(played)})"
+    else:
+        head = "No episodes finished"
+        pr = w.get("progress")
+        if pr and abs(pr["delta"]) >= 30:
+            span = f" ({pr['from_pct']}% → {pr['to_pct']}%)" if pr["from_pct"] is not None else ""
+            head = (f"Kept listening: moved ahead {dur_n(pr['delta'])} in the current episode{span}"
+                    if pr["delta"] > 0 else
+                    f"Replayed: went back {dur_n(abs(pr['delta']))} in the current episode{span}")
     if qd < 0:
         tail, tone = f"the queue decreased by {episodes_phrase(abs(qd))}, from {q - qd} to {q}", "better"
     elif qd > 0:
@@ -980,6 +1007,14 @@ def timeline_html(s, tz=None):
     in_dash = False
     rows = ""
     last_playing = None
+    richest = {}
+    for w in s["windows"]:
+        np = w["snap"].get("now_playing")
+        if np and np.get("title"):
+            merged = richest.setdefault(np["title"], {})
+            for k, v in np.items():
+                if v is not None and k not in merged:
+                    merged[k] = v
     for w in s["windows"]:
         sn = w["snap"]
         shaded = in_dash or sn["label"] == "dash-end"
@@ -999,7 +1034,8 @@ def timeline_html(s, tz=None):
         when = clock(sn, tz) if w.get("first") else window_label(sn, tz)
         # show what was playing only when it changes, not on every row of one long episode
         np = sn.get("now_playing")
-        playing_html = mini_playing_html(np) if np and np.get("title") != last_playing else ""
+        playing_html = (mini_playing_html(dict(richest.get(np["title"], {}), **np))
+                        if np and np.get("title") != last_playing else "")
         if np:
             last_playing = np.get("title")
         rows += (

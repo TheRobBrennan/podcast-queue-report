@@ -619,6 +619,32 @@ class WindowStoryTests(unittest.TestCase):
         return {"snap": {"queue_count": q, "played_count": played_count}, "played": played,
                 "queue_delta": qd, "arrivals_count": arrivals, "first": False}
 
+    def test_listening_inside_an_unfinished_episode_is_not_nothing(self):
+        def with_np(local, elapsed):
+            sn = snap(local, "manual", 121, 300000, 900000, 0, 0)
+            sn["now_playing"] = {"title": "Long Episode", "podcast": "Show", "elapsed_seconds": elapsed,
+                                 "duration_seconds": 1000}
+            return sn
+        history = [with_np("2026-10-16T09:00", 200), with_np("2026-10-16T10:00", 600),
+                   with_np("2026-10-16T11:00", 100), with_np("2026-10-16T12:00", 110)]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        stories = [flow.window_story(w)[0] for w in s["windows"][1:]]
+        self.assertEqual(stories[0], "Kept listening: moved ahead 6 mins 40 seconds in the current episode (20% → 60%) · the queue stayed at 121")
+        self.assertEqual(stories[1], "Replayed: went back 8 mins 20 seconds in the current episode (60% → 10%) · the queue stayed at 121")
+        self.assertTrue(stories[2].startswith("No episodes finished"))  # moved 10 seconds: not worth a sentence
+
+    def test_artwork_for_an_episode_is_borrowed_from_a_later_reading(self):
+        early = snap("2026-10-16T09:00", "manual")
+        early["now_playing"] = {"title": "Ep", "podcast": "Show"}               # recorded before artwork was saved
+        later = snap("2026-10-16T10:00", "manual")
+        later["now_playing"] = {"title": "Ep", "podcast": "Show", "artwork_url": "https://a/9.jpg",
+                                "episode_url": "https://e/9"}
+        history = [snap("2026-10-16T08:00", "morning"), early, later]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        page = flow.render_day_html(s, NY)
+        row = page.split("The shape of your day")[1]
+        self.assertIn('src="https://a/9.jpg"', row.split("What&rsquo;s piling up")[0])
+
     def test_what_was_playing_is_shown_only_when_it_changes(self):
         playing = {"title": "Same Episode", "podcast": "Show", "artwork_url": "https://a/1.jpg"}
         history = [snap("2026-10-16T08:00", "morning"), snap("2026-10-16T09:00"), snap("2026-10-16T10:00"),
@@ -654,9 +680,9 @@ class WindowStoryTests(unittest.TestCase):
 
     def test_a_quiet_window(self):
         text, tone, _ = flow.window_story(self.window(0, 0, 0, 0, 121))
-        self.assertEqual(text, "Nothing played · the queue stayed at 121")
+        self.assertEqual(text, "No episodes finished · the queue stayed at 121")
         text, tone, _ = flow.window_story(self.window(0, 0, 3, 3, 124))
-        self.assertEqual(text, "Nothing played · the queue increased by 3 episodes, from 121 to 124")
+        self.assertEqual(text, "No episodes finished · the queue increased by 3 episodes, from 121 to 124")
 
     def test_timeline_shows_the_window_the_artwork_and_the_dash_in_words(self):
         history = [
