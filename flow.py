@@ -1701,7 +1701,7 @@ def main(argv=None):
     for name in ("day", "week"):
         p = sub.add_parser(name, help=f"render the {name} flow from history")
         p.add_argument("--date")
-        p.add_argument("--format", choices=("chat", "html", "email"), default="chat")
+        p.add_argument("--format", choices=("chat", "html", "email", "discord"), default="chat")
         p.add_argument("--no-queue", action="store_true",
                        help="leave the unplayed queue off html/email (it is added from the last run's JSON by default)")
 
@@ -1734,11 +1734,13 @@ def main(argv=None):
     history = load_history()
     day = _arg_day(args.date)
     d = (json.load(open(RUN_JSON))
-         if args.format in ("html", "email") and not args.no_queue and os.path.exists(RUN_JSON) else None)
+         if args.format in ("html", "email", "discord") and not args.no_queue and os.path.exists(RUN_JSON) else None)
     if args.cmd == "day":
         s = summarize_day(history, day)
         if args.format == "chat":
             print(render_day_chat(s))
+        elif args.format == "discord":
+            print(json.dumps(build_discord_day(s, None, None, d)))
         elif args.format == "html":
             print(render_day_html(s, None, None, d))
         else:
@@ -1747,6 +1749,8 @@ def main(argv=None):
         w = summarize_week(history, day)
         if args.format == "chat":
             print(render_week_chat(w))
+        elif args.format == "discord":
+            print(json.dumps(build_discord_week(w)))
         elif args.format == "html":
             print(render_week_html(w, None, None, d))
         else:
