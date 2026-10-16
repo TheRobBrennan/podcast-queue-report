@@ -730,13 +730,15 @@ class ChartAndProgressTests(unittest.TestCase):
         self.assertLess(page.index("The queue over your day"), page.index("Finished"))
         self.assertLess(page.index("The queue over your day"), page.index("Episodes in your queue"))
 
-    def test_episodes_in_progress_sit_right_under_the_chart(self):
+    def test_now_playing_then_episodes_in_progress_sit_under_the_chart(self):
         history = [dict(h) for h in self.history]
         history[-1]["in_progress"] = [{"title": "Half Done", "podcast": "Show", "pct": 50, "left": "30 mins"}]
+        history[-1]["now_playing"] = {"title": "Playing Now", "podcast": "Show"}
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
         page = flow.render_day_html(s, NY)
-        self.assertLess(page.index("The queue over your day"), page.index("Episodes in progress"))
-        self.assertLess(page.index("Episodes in progress"), page.index("Episodes in your queue"))
+        order = [page.index(x) for x in ("The queue over your day", "NOW PLAYING", "Episodes in progress",
+                                          "Episodes in your queue")]
+        self.assertEqual(order, sorted(order))
 
     def test_chart_needs_two_readings_and_tolerates_a_crowd(self):
         self.assertEqual(flow.queue_chart_svg(flow.summarize_day(self.history[:1], datetime.date(2026, 10, 16), NY), NY), "")
