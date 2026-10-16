@@ -769,7 +769,9 @@ def render_day_html(s, tz=None, generated=None, d=None):
               f"{s['listened_count']} episode{'' if s['listened_count'] == 1 else 's'} played {since_label(qs, tz)}"),
         queue_card(qs, qe, tz),
         _card("The oldest unplayed episode in your queue", f"{dur(qe['behind_seconds'])} old",
-              f"{behind_phrase(s['behind_delta'])} {since_label(qs, tz)}"),
+              ("No change " if round(s["behind_delta"]) == 0 else
+               f"{'Improved' if s['behind_delta'] < 0 else 'Slipped'} {dur_n(s['behind_delta'])} ")
+              + since_label(qs, tz)),
         _card("New arrivals", dur(s["arrivals_seconds"])),
     ]
     rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))
