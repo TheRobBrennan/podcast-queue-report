@@ -1350,7 +1350,8 @@ def render_day_html(s, tz=None, generated=None, d=None):
                                      since_label(qs, tz))),
     ]
     rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))
-    parts = [f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">{rows}</table>']
+    parts = [queue_chart_svg(s, tz).replace("margin:8px 0 4px;", "margin:20px 0 4px;", 1),
+             f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:0;">{rows}</table>']
     hl = highlights(s, tz)
     if hl:
         items = "".join(f'<div style="margin:6px 0;font-size:14px;">{icon} {html.escape(line)}</div>' for icon, line in hl)
@@ -1359,7 +1360,6 @@ def render_day_html(s, tz=None, generated=None, d=None):
     if d and d.get("now_playing"):
         np = d["now_playing"]
         nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
-    parts.append(queue_chart_svg(s, tz))
     parts.append(now_playing_card_html(np, nxt))
     started = in_progress_episodes(d) if d else ((s.get("in_progress_snapshot") or {}).get("in_progress") or [])
     parts.append(in_progress_html(started))

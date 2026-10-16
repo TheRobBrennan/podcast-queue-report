@@ -736,6 +736,11 @@ class ChartAndProgressTests(unittest.TestCase):
         for hour in ("6am", "6pm"):
             self.assertIn(f">{hour}<", svg)
 
+    def test_the_queue_chart_is_the_first_thing_on_the_page(self):
+        page = flow.render_day_html(self.s, NY)
+        self.assertLess(page.index("The queue over your day"), page.index("Finished"))
+        self.assertLess(page.index("The queue over your day"), page.index("Episodes in your queue"))
+
     def test_chart_needs_two_readings_and_tolerates_a_crowd(self):
         self.assertEqual(flow.queue_chart_svg(flow.summarize_day(self.history[:1], datetime.date(2026, 10, 16), NY), NY), "")
         crowd = [snap("2026-10-16T06:00", "morning", 124)] + [
