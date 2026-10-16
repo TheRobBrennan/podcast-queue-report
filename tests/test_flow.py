@@ -741,6 +741,14 @@ class ChartAndProgressTests(unittest.TestCase):
         self.assertLess(page.index("The queue over your day"), page.index("Finished"))
         self.assertLess(page.index("The queue over your day"), page.index("Episodes in your queue"))
 
+    def test_episodes_in_progress_sit_right_under_the_chart(self):
+        history = [dict(h) for h in self.history]
+        history[-1]["in_progress"] = [{"title": "Half Done", "podcast": "Show", "pct": 50, "left": "30 mins"}]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        page = flow.render_day_html(s, NY)
+        self.assertLess(page.index("The queue over your day"), page.index("Episodes in progress"))
+        self.assertLess(page.index("Episodes in progress"), page.index("Episodes in your queue"))
+
     def test_chart_needs_two_readings_and_tolerates_a_crowd(self):
         self.assertEqual(flow.queue_chart_svg(flow.summarize_day(self.history[:1], datetime.date(2026, 10, 16), NY), NY), "")
         crowd = [snap("2026-10-16T06:00", "morning", 124)] + [
@@ -752,15 +760,17 @@ class ChartAndProgressTests(unittest.TestCase):
     def test_in_progress_episodes_and_their_bars(self):
         d = {"queue": {"episodes": [
             {"title": "Half Done", "podcast": "Show", "in_progress": True, "duration_fmt": "1 hr",
-             "remaining_fmt": "30 mins", "artwork_url": "https://a/h.jpg", "episode_url": "https://e/h"},
+             "remaining_fmt": "30 mins", "artwork_url": "https://a/h.jpg", "episode_url": "https://e/h",
+             "pubdate": "2026-10-06T07:00:00"},
             {"title": "Barely Started", "podcast": "Other", "in_progress": True, "duration_fmt": "40 mins",
              "remaining_fmt": "36 mins"},
             {"title": "Untouched", "podcast": "Show", "in_progress": False, "duration_fmt": "20 mins"},
         ]}}
         items = flow.in_progress_episodes(d)
         self.assertEqual([(i["title"], i["pct"]) for i in items], [("Half Done", 50), ("Barely Started", 10)])
-        page = flow.in_progress_html(items)
-        for needle in ("Episodes in progress", "50%", "30 mins left", 'src="https://a/h.jpg"', 'href="https://e/h"', "width:10%"):
+        page = flow.in_progress_html(items, NY)
+        for needle in ("Episodes in progress", "50%", "30 mins left", 'src="https://a/h.jpg"', 'href="https://e/h"',
+                       "width:10%", "Tue, Oct 6 · "):
             self.assertIn(needle, page)
         self.assertEqual(flow.in_progress_html([]), "")
 

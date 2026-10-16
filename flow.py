@@ -98,7 +98,8 @@ def in_progress_episodes(d, top=8):
         pct = max(0, min(100, round(100 * (1 - left / total))))
         out.append({"title": e.get("title"), "podcast": e.get("podcast"), "episode_url": e.get("episode_url"),
                     "podcast_url": e.get("podcast_url"), "artwork_url": e.get("artwork_url"),
-                    "pct": pct, "left": e.get("remaining_fmt"), "length": e.get("duration_fmt")})
+                    "pubdate": e.get("pubdate"), "pct": pct, "left": e.get("remaining_fmt"),
+                    "length": e.get("duration_fmt")})
     out.sort(key=lambda r: -r["pct"])
     return out[:top]
 
@@ -1303,13 +1304,19 @@ def queue_chart_svg(s, tz=None, width=680, height=190):
     )
 
 
-def in_progress_html(items):
+def in_progress_html(items, tz=None):
     """The episodes you have started: artwork, a linked title and show, and how
     far through each one is."""
     if not items:
         return ""
     rows = ""
+    now_utc = utcnow()
     for it in items:
+        published = ""
+        if it.get("pubdate"):
+            age = (now_utc - parse_utc(it["pubdate"])).total_seconds()
+            published = (f'<div style="font-size:12px;color:#94a3b8;margin-top:1px;">'
+                         f'{html.escape(published_label(it["pubdate"], tz))} · {html.escape(ago_phrase(age))}</div>')
         art = ""
         if it.get("artwork_url"):
             img = (f'<img src="{html.escape(it["artwork_url"])}" width="40" height="40" '
@@ -1322,6 +1329,7 @@ def in_progress_html(items):
             '<div style="flex:1;min-width:0;">'
             f'<div style="font-size:13px;font-weight:700;">{_link(it.get("title"), it.get("episode_url"), "#1e293b")}</div>'
             f'<div style="font-size:12px;color:#64748b;">{_link(it.get("podcast"), it.get("podcast_url"), "#64748b")}</div>'
+            f'{published}'
             '<div style="height:8px;border-radius:4px;background:#e2e8f0;margin-top:7px;">'
             f'<div style="height:8px;border-radius:4px;background:linear-gradient(90deg,#34d399,#16a34a);width:{it["pct"]}%;"></div></div></div>'
             f'<div style="flex:0 0 auto;text-align:right;font-size:12px;color:#64748b;white-space:nowrap;">'
@@ -1350,7 +1358,9 @@ def render_day_html(s, tz=None, generated=None, d=None):
                                      since_label(qs, tz))),
     ]
     rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))
+    started = in_progress_episodes(d) if d else ((s.get("in_progress_snapshot") or {}).get("in_progress") or [])
     parts = [queue_chart_svg(s, tz).replace("margin:8px 0 4px;", "margin:20px 0 4px;", 1),
+             in_progress_html(started, tz),
              f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:0;">{rows}</table>']
     hl = highlights(s, tz)
     if hl:
@@ -1361,8 +1371,6 @@ def render_day_html(s, tz=None, generated=None, d=None):
         np = d["now_playing"]
         nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
     parts.append(now_playing_card_html(np, nxt))
-    started = in_progress_episodes(d) if d else ((s.get("in_progress_snapshot") or {}).get("in_progress") or [])
-    parts.append(in_progress_html(started))
     parts.append(timeline_html(s, tz))
     parts.append(piling_up_html(s, d, tz))
     return _page(title, "".join(parts), day_headline(s), generated, tz,
