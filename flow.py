@@ -113,7 +113,14 @@ def snapshot_from_run(d, label, source="live"):
         "played_seconds": int(round(since["total_seconds"])),
     }
     if np:
-        snap["now_playing"] = {"title": np.get("title"), "podcast": np.get("podcast")}
+        snap["now_playing"] = {k: np.get(k) for k in (
+            "title", "podcast", "episode_url", "podcast_url", "artwork_url",
+            "elapsed_seconds", "duration_seconds", "remaining_fmt") if np.get(k) is not None}
+    nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
+    if nxt:
+        snap["up_next"] = {k: nxt.get(k) for k in (
+            "title", "podcast", "episode_url", "podcast_url", "artwork_url", "duration_fmt")
+            if nxt.get(k) is not None}
     shows = queue_by_show(d)
     if shows:
         snap["by_show"] = shows
@@ -243,11 +250,14 @@ def summarize_day(history, day, tz=None):
     out["by_part"] = listening_by_part(windows, tz)
     first_dt, last_dt = parse_utc(first["ts"]), parse_utc(last["ts"])
     out["elapsed_hours"] = (last_dt - first_dt).total_seconds() / 3600
-    out["yesterday_listened"], out["recent_average"] = day_context(history, day, tz)
+    out["cutoff_snap"] = last
+    out["yesterday_listened"], out["recent_average"], out["recent_days"] = day_context(
+        history, day, tz, cutoff=day_offset(last, tz))
     shows = [sn for sn in snaps if sn.get("by_show")]
     out["by_show_snapshot"] = shows[-1] if shows else None
     playing = [sn for sn in snaps if sn.get("now_playing")]
     out["now_playing"] = playing[-1]["now_playing"] if playing else None
+    out["up_next"] = (playing[-1].get("up_next") if playing else None)
     return out
 
 
@@ -295,15 +305,28 @@ def listening_by_part(windows, tz=None):
     return sorted(rows, key=lambda r: -r["seconds"])
 
 
-def day_context(history, day, tz=None):
-    """(yesterday's listening, average listening over the 7 days before), each
-    None when there is no data for it."""
+def day_offset(snap, tz=None):
+    """Seconds into the flow day (which starts at 4am local) a reading was taken."""
+    dt = local_dt(snap, tz)
+    start = datetime.datetime.combine(day_of(dt), datetime.time(DAY_STARTS_HOUR), tzinfo=dt.tzinfo)
+    return (dt - start).total_seconds()
+
+
+def day_context(history, day, tz=None, cutoff=None):
+    """How earlier days compare at the same point in the day. Returns
+    (yesterday's listening by `cutoff`, average listening by `cutoff` over the
+    earlier days that have data, how many days that average covers); each None
+    or 0 when there is nothing to compare with. `cutoff` is seconds into the
+    day, so a half-finished day is compared with half-finished days."""
     def listened(d):
         snaps = day_snapshots(history, d, tz)
-        return sum(s["played_seconds"] for s in snaps[1:]) if snaps else None
+        if not snaps:
+            return None
+        return sum(s["played_seconds"] for s in snaps[1:]
+                   if cutoff is None or day_offset(s, tz) <= cutoff)
     yesterday = listened(day - datetime.timedelta(days=1))
     prior = [x for x in (listened(day - datetime.timedelta(days=i)) for i in range(1, 8)) if x is not None]
-    return yesterday, (sum(prior) / len(prior) if prior else None)
+    return yesterday, (sum(prior) / len(prior) if prior else None), len(prior)
 
 
 def week_days(anchor_day):
@@ -542,21 +565,25 @@ def pace_line(s):
                   f"{days:.0f} day{'' if round(days) == 1 else 's'}")
 
 
-def vs_lines(s):
-    """Plain comparisons: against yesterday and against the recent average."""
-    so_far = "" if s["closed"] else " so far"
+def vs_lines(s, tz=None):
+    """Plain comparisons with earlier days at the same point in the day, so a
+    half-finished day is never held against a whole one."""
+    by = f"by {clock(s['cutoff_snap'], tz)}"
     lines = []
     y = s.get("yesterday_listened")
     if y is not None:
         diff = s["listened_seconds"] - y
-        lines.append(("📈" if diff >= 0 else "📉",
-                      f"{dur_n(abs(diff))} {'more' if diff >= 0 else 'less'} than yesterday{so_far}"
-                      if round(diff) else f"Same as yesterday{so_far}"))
-    avg = s.get("recent_average")
-    if avg is not None:
+        if round(diff):
+            lines.append(("📈" if diff > 0 else "📉",
+                          f"{dur_n(abs(diff))} {'more' if diff > 0 else 'less'} than yesterday at this time "
+                          f"(yesterday {by}: {dur_n(y)})"))
+        else:
+            lines.append(("📊", f"Right on yesterday's pace (yesterday {by}: {dur_n(y)})"))
+    avg, n = s.get("recent_average"), s.get("recent_days", 0)
+    if avg is not None and n >= 2:
         diff = s["listened_seconds"] - avg
-        lines.append(("📊", f"{dur_n(abs(diff))} {'above' if diff >= 0 else 'below'} your recent average of "
-                            f"{dur_n(avg)} a day{so_far}"))
+        lines.append(("📊", f"{dur_n(abs(diff))} {'above' if diff >= 0 else 'below'} your usual at this time "
+                            f"(average of {n} days {by}: {dur_n(avg)})"))
     return lines
 
 
@@ -589,7 +616,7 @@ def highlights(s, tz=None):
         out.append(("🤫" if mid_dash else "😴", f"{'Quiet stretch mid-Dash' if mid_dash else 'Nap time'}: {dur_n(span)} with nothing played, "
                           f"{local_dt({'ts': x}, tz).strftime('%-I:%M%p').lower()} to "
                           f"{local_dt({'ts': y}, tz).strftime('%-I:%M%p').lower()}"))
-    for icon, line in vs_lines(s):
+    for icon, line in vs_lines(s, tz):
         out.append((icon, line))
     return out
 
@@ -986,6 +1013,57 @@ def piling_up_html(s):
     )
 
 
+def _link(text, url, color="inherit", weight=None):
+    inner = html.escape(text or "")
+    if not url:
+        return inner
+    style = f"color:{color};text-decoration:none;" + (f"font-weight:{weight};" if weight else "")
+    return f'<a href="{html.escape(url)}" target="_blank" style="{style}">{inner}</a>'
+
+
+def now_playing_card_html(np, up_next=None):
+    """The episode playing right now: artwork, linked title and show, how far
+    through it you are, and what is next."""
+    if not np:
+        return ""
+    art = (f'<img src="{html.escape(np["artwork_url"])}" width="64" height="64" '
+           'style="border-radius:10px;display:block;" alt="">') if np.get("artwork_url") else ""
+    if np.get("artwork_url") and (np.get("episode_url") or np.get("podcast_url")):
+        art = f'<a href="{html.escape(np.get("episode_url") or np.get("podcast_url"))}" target="_blank">{art}</a>'
+    progress = ""
+    dur_s, el_s = np.get("duration_seconds") or 0, np.get("elapsed_seconds") or 0
+    if dur_s > 0:
+        pct = max(0, min(100, 100 * el_s / dur_s))
+        left = np.get("remaining_fmt") or ""
+        progress = (
+            '<div style="height:6px;border-radius:3px;background:#bbf7d0;margin-top:10px;">'
+            f'<div style="height:6px;border-radius:3px;background:#16a34a;width:{pct:.0f}%;"></div></div>'
+            f'<div style="font-size:12px;color:#047857;margin-top:5px;">{pct:.0f}% played'
+            + (f" · {html.escape(left)} left" if left else "") + '</div>'
+        )
+    nxt = ""
+    if up_next and up_next.get("title"):
+        nxt = (
+            '<div style="font-size:12px;color:#475569;margin-top:10px;padding-top:10px;border-top:1px solid #bbf7d0;">'
+            '<span style="display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;'
+            'letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-right:6px;">▶ UP NEXT</span>'
+            f'{_link(up_next["title"], up_next.get("episode_url"), "#1e293b")} — '
+            f'{_link(up_next.get("podcast"), up_next.get("podcast_url"), "#64748b")}'
+            + (f' · {html.escape(up_next["duration_fmt"])}' if up_next.get("duration_fmt") else "") + '</div>'
+        )
+    return (
+        '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">'
+        '<div style="display:flex;gap:16px;align-items:flex-start;">'
+        f'<div style="flex:0 0 64px;">{art}</div>'
+        '<div style="flex:1;min-width:0;">'
+        f'{rr.now_playing_badge()}'
+        f'<div style="font-size:15px;font-weight:700;margin-top:6px;color:#065f46;">'
+        f'{_link(np.get("title"), np.get("episode_url"), "#065f46")}</div>'
+        f'<div style="font-size:13px;margin-top:2px;color:#047857;">{_link(np.get("podcast"), np.get("podcast_url"), "#047857")}</div>'
+        f'{progress}</div></div>{nxt}</div>'
+    )
+
+
 def render_day_html(s, tz=None, generated=None, d=None):
     title = f"Daily Flow — {pretty_day_full(s['day'])}"
     if not s["snapshots"]:
@@ -1007,13 +1085,11 @@ def render_day_html(s, tz=None, generated=None, d=None):
     if hl:
         items = "".join(f'<div style="margin:6px 0;font-size:14px;">{icon} {html.escape(line)}</div>' for icon, line in hl)
         parts.append(_white_card(items, 20))
-    if s.get("now_playing"):
-        np = s["now_playing"]
-        parts.append(
-            '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:12px 20px;'
-            f'margin-bottom:20px;font-size:14px;color:#047857;">▶ Now playing: <b>{html.escape(np.get("title") or "")}</b>'
-            f' — {html.escape(np.get("podcast") or "")}</div>'
-        )
+    np, nxt = s.get("now_playing"), s.get("up_next")
+    if d and d.get("now_playing"):
+        np = d["now_playing"]
+        nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
+    parts.append(now_playing_card_html(np, nxt))
     parts.append(timeline_html(s, tz))
     parts.append(piling_up_html(s))
     return _page(title, "".join(parts), day_headline(s), generated, tz,

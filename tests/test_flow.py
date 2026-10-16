@@ -291,12 +291,53 @@ class StoryTests(unittest.TestCase):
         self.assertEqual(w[1]["queue_delta"], -2)
         self.assertEqual(self.s["biggest_listen"]["played"], 10800)
 
-    def test_context_compares_to_yesterday_and_recent_average(self):
+    def test_context_compares_to_yesterday_at_the_same_time_of_day(self):
         self.assertEqual(self.s["yesterday_listened"], 3000)
-        self.assertEqual(self.s["recent_average"], 3000)
-        lines = " ".join(line for _, line in flow.vs_lines(self.s))
-        self.assertIn("more than yesterday", lines)
-        self.assertIn("above your recent average", lines)
+        lines = " ".join(line for _, line in flow.vs_lines(self.s, NY))
+        self.assertIn("more than yesterday at this time (yesterday by 10:00pm: 50 mins)", lines)
+        self.assertNotIn("your usual", lines)  # one earlier day is not an average
+
+    def test_an_average_needs_two_earlier_days_and_stops_at_the_same_hour(self):
+        history = [
+            snap("2026-10-14T08:00", "morning"),
+            snap("2026-10-14T12:00", "manual", played_seconds=3600),
+            snap("2026-10-14T21:00", "evening", played_seconds=36000),   # after today's cutoff: ignored
+            snap("2026-10-15T08:00", "morning"),
+            snap("2026-10-15T12:00", "manual", played_seconds=7200),
+            snap("2026-10-15T21:00", "evening", played_seconds=36000),   # ignored too
+            snap("2026-10-16T08:00", "morning"),
+            snap("2026-10-16T12:00", "manual", played_seconds=1800),
+        ]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        self.assertEqual(s["yesterday_listened"], 7200)
+        self.assertEqual(s["recent_days"], 2)
+        self.assertEqual(s["recent_average"], 5400)
+        lines = " ".join(line for _, line in flow.vs_lines(s, NY))
+        self.assertIn("1 hr 30 mins less than yesterday at this time (yesterday by 12:00pm: 2 hrs)", lines)
+        self.assertIn("1 hr below your usual at this time (average of 2 days by 12:00pm: 1 hr 30 mins)", lines)
+
+    def test_now_playing_card_has_artwork_links_progress_and_up_next(self):
+        np = {"title": "The Nightmare Cure", "podcast": "MrBallen", "episode_url": "https://e/1",
+              "podcast_url": "https://p/1", "artwork_url": "https://a/1.jpg",
+              "elapsed_seconds": 600, "duration_seconds": 1200, "remaining_fmt": "10 mins"}
+        nxt = {"title": "Next One", "podcast": "Other Show", "episode_url": "https://e/2",
+               "podcast_url": "https://p/2", "duration_fmt": "45 mins"}
+        card = flow.now_playing_card_html(np, nxt)
+        for needle in ('src="https://a/1.jpg"', 'href="https://e/1"', 'href="https://p/1"',
+                       "50% played", "10 mins left", "UP NEXT", 'href="https://e/2"', "45 mins"):
+            self.assertIn(needle, card)
+        self.assertEqual(flow.now_playing_card_html(None), "")
+        self.assertIn("NOW PLAYING", flow.now_playing_card_html({"title": "Only a title"}))
+
+    def test_snapshot_keeps_the_now_playing_details(self):
+        d = minimal_run_json()
+        d["now_playing"] = {"title": "T", "podcast": "P", "episode_url": "u", "artwork_url": "a",
+                            "elapsed_seconds": 5, "duration_seconds": 10, "remaining_fmt": "5 seconds"}
+        d["queue"]["episodes"] = [{"title": "Q", "podcast": "P2", "duration_fmt": "5 mins",
+                                   "pubdate": "2026-10-10T07:00:00", "in_progress": False}]
+        sn = flow.snapshot_from_run(d, "pulse")
+        self.assertEqual(sn["now_playing"]["artwork_url"], "a")
+        self.assertEqual(sn["up_next"]["title"], "Q")
 
     def test_a_quiet_stretch_inside_a_dash_is_not_called_nap_time(self):
         history = [
