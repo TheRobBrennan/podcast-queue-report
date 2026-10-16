@@ -95,6 +95,8 @@ def in_progress_episodes(d, top=8):
         left = parse_fmt_seconds(e.get("remaining_fmt"))
         if total <= 0:
             continue
+        if total - left < 30:
+            continue    # flagged "started" by Podcasts, but sitting at the beginning (e.g. you reset it)
         pct = max(0, min(100, round(100 * (1 - left / total))))
         out.append({"title": e.get("title"), "podcast": e.get("podcast"), "episode_url": e.get("episode_url"),
                     "podcast_url": e.get("podcast_url"), "artwork_url": e.get("artwork_url"),

@@ -765,6 +765,10 @@ class ChartAndProgressTests(unittest.TestCase):
             {"title": "Barely Started", "podcast": "Other", "in_progress": True, "duration_fmt": "40 mins",
              "remaining_fmt": "36 mins"},
             {"title": "Untouched", "podcast": "Show", "in_progress": False, "duration_fmt": "20 mins"},
+            {"title": "Reset To Start", "podcast": "Show", "in_progress": True, "duration_fmt": "28 mins",
+             "remaining_fmt": "28 mins"},
+            {"title": "Ten Seconds In", "podcast": "Show", "in_progress": True, "duration_fmt": "28 mins",
+             "remaining_fmt": "27 mins 50 seconds"},
         ]}}
         items = flow.in_progress_episodes(d)
         self.assertEqual([(i["title"], i["pct"]) for i in items], [("Half Done", 50), ("Barely Started", 10)])
