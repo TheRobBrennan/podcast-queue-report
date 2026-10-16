@@ -321,10 +321,11 @@ class StoryTests(unittest.TestCase):
               "podcast_url": "https://p/1", "artwork_url": "https://a/1.jpg",
               "elapsed_seconds": 600, "duration_seconds": 1200, "remaining_fmt": "10 mins"}
         nxt = {"title": "Next One", "podcast": "Other Show", "episode_url": "https://e/2",
-               "podcast_url": "https://p/2", "duration_fmt": "45 mins"}
+               "podcast_url": "https://p/2", "artwork_url": "https://a/2.jpg", "duration_fmt": "45 mins"}
         card = flow.now_playing_card_html(np, nxt)
         for needle in ('src="https://a/1.jpg"', 'href="https://e/1"', 'href="https://p/1"',
-                       "50% played", "10 mins left", "UP NEXT", 'href="https://e/2"', "45 mins"):
+                       "50% played", "10 mins left", "UP NEXT", 'href="https://e/2"', 'href="https://p/2"',
+                       'src="https://a/2.jpg"', 'width="40"', "45 mins"):
             self.assertIn(needle, card)
         self.assertEqual(flow.now_playing_card_html(None), "")
         self.assertIn("NOW PLAYING", flow.now_playing_card_html({"title": "Only a title"}))

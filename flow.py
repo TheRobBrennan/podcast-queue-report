@@ -1042,13 +1042,23 @@ def now_playing_card_html(np, up_next=None):
         )
     nxt = ""
     if up_next and up_next.get("title"):
+        small = ""
+        if up_next.get("artwork_url"):
+            img = (f'<img src="{html.escape(up_next["artwork_url"])}" width="40" height="40" '
+                   'style="border-radius:7px;display:block;" alt="">')
+            link = up_next.get("episode_url") or up_next.get("podcast_url")
+            small = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
         nxt = (
-            '<div style="font-size:12px;color:#475569;margin-top:10px;padding-top:10px;border-top:1px solid #bbf7d0;">'
+            '<div style="display:flex;gap:12px;align-items:center;margin-top:12px;padding-top:12px;'
+            'border-top:1px solid #bbf7d0;">'
+            f'<div style="flex:0 0 40px;">{small}</div>'
+            '<div style="flex:1;min-width:0;font-size:12px;color:#475569;">'
             '<span style="display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;'
-            'letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-right:6px;">▶ UP NEXT</span>'
-            f'{_link(up_next["title"], up_next.get("episode_url"), "#1e293b")} — '
-            f'{_link(up_next.get("podcast"), up_next.get("podcast_url"), "#64748b")}'
-            + (f' · {html.escape(up_next["duration_fmt"])}' if up_next.get("duration_fmt") else "") + '</div>'
+            'letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-bottom:3px;">▶ UP NEXT</span>'
+            f'<div style="font-size:13px;font-weight:600;">{_link(up_next["title"], up_next.get("episode_url"), "#1e293b")}</div>'
+            f'<div>{_link(up_next.get("podcast"), up_next.get("podcast_url"), "#64748b")}'
+            + (f' · {html.escape(up_next["duration_fmt"])}' if up_next.get("duration_fmt") else "")
+            + '</div></div></div>'
         )
     return (
         '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">'
