@@ -1428,12 +1428,60 @@ def _field(name, value, inline=True):
     return {"name": name, "value": value or "-", "inline": inline}
 
 
-def build_discord_day(s, generated=None, tz=None):
+SPARK = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
+
+
+def queue_sparkline(s, tz=None, width=28):
+    """The queue over the day as a line of block characters plus its start,
+    peak and latest, for places that can't draw the chart."""
+    snaps = s["snapshots"]
+    if len(snaps) < 2:
+        return ""
+    counts = [x["queue_count"] for x in snaps]
+    if len(counts) > width:
+        counts = [counts[round(i * (len(counts) - 1) / (width - 1))] for i in range(width)]
+    lo, hi = min(counts), max(counts)
+    line = "".join(SPARK[round((c - lo) / ((hi - lo) or 1) * (len(SPARK) - 1))] if hi > lo else SPARK[3] for c in counts)
+    first, last = snaps[0], snaps[-1]
+    peak = max(snaps, key=lambda x: x["queue_count"])
+    parts = [f"{first['queue_count']} at {clock(first, tz)}"]
+    if peak["queue_count"] > max(first["queue_count"], last["queue_count"]):
+        parts.append(f"peak {peak['queue_count']} at {clock(peak, tz)}")
+    parts.append(f"{last['queue_count']} now")
+    return f"`{line}`\n" + " \u2192 ".join(parts)
+
+
+def progress_bar(pct, width=10):
+    filled = round(width * pct / 100)
+    return "\u25b0" * filled + "\u25b1" * (width - filled)
+
+
+def in_progress_lines(items):
+    lines = []
+    for it in items:
+        title = it.get("title") or "Untitled"
+        if it.get("episode_url"):
+            title = f"[{title[:70]}]({it['episode_url']})"
+        else:
+            title = title[:70]
+        lines.append(f"**{title}** \u00b7 {it.get('podcast') or ''}\n"
+                     f"{progress_bar(it['pct'])} {it['pct']}% \u00b7 {it.get('left') or ''} left")
+    return "\n".join(lines)
+
+
+def build_discord_day(s, generated=None, tz=None, d=None):
     generated = generated or utcnow()
     if not s["snapshots"]:
         return {"content": f"Daily Flow, {pretty_day(s['day'])}: no snapshots recorded."}
     qs, qe = s["queue_start"], s["queue_end"]
-    fields = [
+    fields = []
+    spark = queue_sparkline(s, tz)
+    if spark:
+        fields.append(_field("__\U0001f4c8 The queue over your day__", spark, inline=False))
+    started = in_progress_episodes(d) if d else ((s.get("in_progress_snapshot") or {}).get("in_progress") or [])
+    if started:
+        fields.append(_field("__\u23f8 Episodes in progress__", in_progress_lines(started)[:1000], inline=False))
+    fields += [
         _field("__\U0001f3a7 Finished__",
                f"{s['listened_count']} episodes\n{rr.wrap_duration(dur(s['listened_seconds']))}"),
         _field("__\U0001f4e5 Queue__",
@@ -1604,7 +1652,7 @@ def take_snapshot(label, quiet=False, open_report=False, history_path=None):
     if not quiet and label != "pulse":
         _pipe(["discord"], "post_discord.py")
         if label in DISCORD_FLOW_LABELS:
-            _send(json.dumps(build_discord_day(s, generated)), "post_discord.py")
+            _send(json.dumps(build_discord_day(s, generated, None, d)), "post_discord.py")
         if label == "evening" and day.weekday() == 6:
             w = summarize_week(history, day)
             _send(json.dumps(build_discord_week(w, generated)), "post_discord.py")

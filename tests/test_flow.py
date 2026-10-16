@@ -532,6 +532,20 @@ class GeneratedAndQueueTests(unittest.TestCase):
         self.assertEqual(page.count("</body>"), 1)
         self.assertEqual(page.count("display:inline-block;margin:0 2px;"), 21)  # one emoji row only
 
+    def test_discord_day_shows_the_queue_line_and_episodes_in_progress(self):
+        payload = flow.build_discord_day(self.s, self.generated, NY)
+        fields = {f["name"]: f["value"] for f in payload["embeds"][0]["fields"]}
+        chart = next(v for n, v in fields.items() if "The queue over your day" in n)
+        self.assertRegex(chart, "[\u2581-\u2588]{3,}")
+        self.assertIn(" now", chart)
+        d = {"queue": {"episodes": [{"title": "Ep", "podcast": "Show", "in_progress": True,
+                                     "duration_fmt": "1 hr", "remaining_fmt": "30 mins"}]}}
+        payload = flow.build_discord_day(self.s, self.generated, NY, d)
+        fields = {f["name"]: f["value"] for f in payload["embeds"][0]["fields"]}
+        prog = next(v for n, v in fields.items() if "Episodes in progress" in n)
+        self.assertIn("\u25b0\u25b0\u25b0\u25b0\u25b0\u25b1\u25b1\u25b1\u25b1\u25b1 50%", prog)
+        self.assertIn("30 mins left", prog)
+
     def test_discord_day_embed(self):
         payload = flow.build_discord_day(self.s, self.generated, NY)
         embed = payload["embeds"][0]
