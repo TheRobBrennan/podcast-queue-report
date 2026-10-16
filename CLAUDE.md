@@ -15,6 +15,7 @@ version:
 podcast_summary.py   queries the Podcasts DB, writes JSON to stdout
 render_report.py     renders that JSON into chat / sms / email / html
 Makefile             thin wrapper around the two scripts above — use this
+flow.py              snapshot history, day/week analysis, hourly tick (see README "Daily flow")
 scripts/git_unlock.py   clears stale git locks (see "FUSE folder" below)
 ```
 
@@ -39,7 +40,13 @@ make email    # email SUBJECT + body
 make html     # regenerates reports/podcast_report.html
 make open     # regenerates html + opens it in the real macOS default browser
 make discord  # posts the chat summary to Discord (needs DISCORD_WEBHOOK_URL)
-make cron     # discord + email from one query (used by the launchd agent)
+make cron     # discord + email from one query (manual full run; the launchd agent now runs `make tick`)
+make snapshot LABEL=morning|dash-start|dash-end|evening|manual
+              # one query, recorded in .podcast_history.jsonl, posted to Discord;
+              # evening also emails the daily flow (flow.py)
+make flow     # today's daily flow from the snapshot history
+make week     # this week's roll-up
+make tick     # what launchd runs hourly: fallback snapshot only if one is due
 make all      # runs the query ONCE, then renders chat+sms+email+html from
               # that one snapshot — always use this over calling chat/sms/
               # email/html separately if you want more than one format,
@@ -121,6 +128,12 @@ minimal built-in `.env` loader. Nothing to `pip install`.
   `REPORT_PHONE`, the Discord webhook, etc.) all come from `.env` / the
   JSON `config` block — never hardcode a personal email, phone number, or
   webhook URL into the Python or into a skill.
+- **One snapshot = one query, and the snapshot history is the record.** Every
+  `make snapshot` / tick appends one line to `.podcast_history.jsonl`; the
+  daily and weekly reports are computed from it. Don't hand-edit it, and don't
+  call `podcast_summary.py` outside a snapshot if you want the "played since
+  last check" figure to land in the history (a stray query advances the window
+  and that listening is never recorded).
 - **One DB query per report run.** `podcast_summary.py` advances
   `.podcast_skill_state.json`'s "since last check" timestamp every time it
   runs — don't call it more than once per logical report (`make all`, not

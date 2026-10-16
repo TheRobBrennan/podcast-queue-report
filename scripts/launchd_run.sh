@@ -1,18 +1,20 @@
 #!/bin/zsh
-# Local scheduled run of the podcast queue report (launchd agent
-# ai.sploosh.podcast-queue-report). Discord + open the HTML report in the
-# default browser - see CLAUDE.md.
+# Hourly scheduler entry point (launchd agent ai.sploosh.podcast-queue-report).
 #
-# Guards against the back-to-back-runs problem: launchd coalesces missed
-# StartCalendarInterval firings into a single run on wake, and MIN_GAP_MINUTES
-# below is a second belt for any case where it doesn't.
+# The agent fires at :06 every hour, which means the same thing in every time
+# zone. What actually runs is decided at run time by `flow.py tick`, using the
+# Mac's local clock: it takes a fallback morning snapshot (11:00-17:00, only
+# if none exists yet today) or the evening snapshot (after 22:00, only if
+# none exists yet) and otherwise does nothing. The real triggers - /start-day,
+# the Dash start and end, /close-day - call `make snapshot LABEL=...`
+# themselves, so a day with all of those never needs a fallback.
+#
+# DRY_RUN=1 prints what would run without querying, posting, or emailing.
 
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$HOME/Library/Logs/podcast-queue-report"
-STAMP_FILE="$LOG_DIR/.last_success"
-MIN_GAP_MINUTES=${MIN_GAP_MINUTES:-60}
 
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
@@ -26,37 +28,15 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-# Skip if a successful run finished less than MIN_GAP_MINUTES ago.
-if [[ -f "$STAMP_FILE" ]]; then
-  last=$(cat "$STAMP_FILE")
-  now=$(date +%s)
-  gap=$(( (now - last) / 60 ))
-  if (( gap < MIN_GAP_MINUTES )); then
-    log "SKIP: last success was ${gap}m ago (< ${MIN_GAP_MINUTES}m)"
-    exit 0
-  fi
-fi
-
-log "START"
-# DRY_RUN=1 exercises the DB query only, so the agent can be verified
-# without posting to Discord or sending email.
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
-  if make run; then
-    log "OK (dry run): queried the Podcasts DB, skipped Discord + browser"
-    exit 0
-  else
-    log "FAIL (dry run): make run exited $?"
-    exit 1
-  fi
+  python3 flow.py tick --dry-run
+  exit $?
 fi
 
-# `make cron` queries the Podcasts DB exactly once, then posts to Discord
-# and opens the HTML report in the default browser. Do not use `make all`
-# - it drags in the sms and email targets too.
-if make cron; then
-  date +%s > "$STAMP_FILE"
-  log "OK: posted to Discord and opened the HTML report"
+log "TICK"
+if python3 flow.py tick; then
+  log "OK"
 else
-  log "FAIL: make cron exited $?"
+  log "FAIL: flow.py tick exited $?"
   exit 1
 fi
