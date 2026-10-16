@@ -1007,8 +1007,8 @@ def main(argv=None):
         p = sub.add_parser(name, help=f"render the {name} flow from history")
         p.add_argument("--date")
         p.add_argument("--format", choices=("chat", "html", "email"), default="chat")
-        p.add_argument("--with-queue", action="store_true",
-                       help="append the latest queue report (reads the last run's JSON)")
+        p.add_argument("--no-queue", action="store_true",
+                       help="leave the unplayed queue off html/email (it is added from the last run's JSON by default)")
 
     p = sub.add_parser("tick", help="hourly scheduler entry point")
     p.add_argument("--dry-run", action="store_true")
@@ -1023,7 +1023,8 @@ def main(argv=None):
 
     history = load_history()
     day = _arg_day(args.date)
-    d = json.load(open(RUN_JSON)) if args.with_queue and os.path.exists(RUN_JSON) else None
+    d = (json.load(open(RUN_JSON))
+         if args.format in ("html", "email") and not args.no_queue and os.path.exists(RUN_JSON) else None)
     if args.cmd == "day":
         s = summarize_day(history, day)
         if args.format == "chat":
