@@ -361,7 +361,7 @@ class GeneratedAndQueueTests(unittest.TestCase):
     def test_discord_week_embed(self):
         w = flow.summarize_week(self.history, datetime.date(2026, 10, 16), NY)
         embed = flow.build_discord_week(w, self.generated, NY)["embeds"][0]
-        self.assertIn("Weekly flow", embed["description"])
+        self.assertIn("Weekly Flow", embed["description"])
         self.assertTrue(any("By day" in f["name"] for f in embed["fields"]))
 
     def test_email_is_off_unless_asked_for(self):
@@ -388,7 +388,7 @@ class RenderTests(unittest.TestCase):
 
     def test_chat_mentions_the_dash_and_the_totals(self):
         text = flow.render_day_chat(self.s, NY)
-        self.assertIn("Daily flow — Friday, Oct 16", text)
+        self.assertIn("Daily Flow — Friday, Oct 16", text)
         self.assertIn("🚐 Dash 10:00am–6:00pm", text)
         self.assertIn("Listened:", text)
 
@@ -411,6 +411,11 @@ class RenderTests(unittest.TestCase):
         self.assertIn("The shape of your day", page)
         self.assertIn("Dash 10:00am–6:00pm", page)
 
+    def test_browser_tab_title_is_title_cased(self):
+        page = flow.render_day_html(self.s, NY)
+        self.assertIn("<title>Daily Flow — Friday, Oct 16 · Podcast Queue Report</title>", page)
+        self.assertNotIn("Daily flow", page)
+
     def test_email_payload_matches_send_email_layout(self):
         payload = flow.email_payload("Subject here", "<p>x</p>")
         first, _, rest = payload.partition("\n")
@@ -419,8 +424,8 @@ class RenderTests(unittest.TestCase):
 
     def test_week_render(self):
         w = flow.summarize_week(self.history, datetime.date(2026, 10, 16), NY)
-        self.assertIn("Weekly flow", flow.render_week_chat(w, NY))
-        self.assertIn("Weekly flow", flow.render_week_html(w, NY))
+        self.assertIn("Weekly Flow", flow.render_week_chat(w, NY))
+        self.assertIn("Weekly Flow", flow.render_week_html(w, NY))
 
 
 if __name__ == "__main__":

@@ -477,12 +477,12 @@ def bar_chat(value, peak, width=10):
 
 def render_day_chat(s, tz=None):
     if not s["snapshots"]:
-        return f"🎧 Daily flow — {pretty_day(s['day'])}\nNo snapshots recorded."
+        return f"🎧 Daily Flow — {pretty_day(s['day'])}\nNo snapshots recorded."
     qs, qe = s["queue_start"], s["queue_end"]
     lines = [
         ps.emoji_header(),
         day_headline(s),
-        f"🎧 Daily flow — {pretty_day(s['day'])}",
+        f"🎧 Daily Flow — {pretty_day(s['day'])}",
         f"Listened: {dur(s['listened_seconds'])} · {s['listened_count']} episodes played",
         f"Queue: {qs['queue_count']} → {qe['queue_count']} episodes ({signed(s['queue_seconds_delta'])})",
         f"Behind: {dur(qs['behind_seconds'])} → {dur(qe['behind_seconds'])} ({behind_phrase(s['behind_delta'])})",
@@ -519,13 +519,13 @@ def render_day_chat(s, tz=None):
 
 def render_week_chat(w, tz=None):
     if not w["days"]:
-        return "🎧 Weekly flow\nNo snapshots recorded this week."
+        return "🎧 Weekly Flow\nNo snapshots recorded this week."
     first, last = w["days"][0]["day"], w["days"][-1]["day"]
     best = w["best"]
     lines = [
         ps.emoji_header(),
         week_headline(w),
-        f"🎧 Weekly flow — {first.strftime('%b %-d')} to {last.strftime('%b %-d')}",
+        f"🎧 Weekly Flow — {first.strftime('%b %-d')} to {last.strftime('%b %-d')}",
         f"Listened: {dur(w['listened_seconds'])} across {len(w['days'])} days, "
         f"{dur(w['average_seconds'])} a day on average",
         f"Best day: {pretty_day(best['day'])}, {dur(best['listened_seconds'])}",
@@ -599,7 +599,7 @@ def _page(title, body, headline=None, generated=None, tz=None, queue_html=""):
     )
     pill = generated_pill(generated, tz)
     return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>{html.escape(title)}</title></head>
+<html><head><meta charset="utf-8"><title>{html.escape(title)} · Podcast Queue Report</title></head>
 <body style="margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
 <div style="max-width:720px;margin:0 auto;padding:32px 20px;">
 <div style="text-align:center;font-size:25px;line-height:1.3;margin-bottom:16px;white-space:nowrap;">{emoji_row_html()}</div>
@@ -699,7 +699,7 @@ def piling_up_html(s):
 
 
 def render_day_html(s, tz=None, generated=None, d=None):
-    title = f"Daily flow — {pretty_day(s['day'])}"
+    title = f"Daily Flow — {pretty_day(s['day'])}"
     if not s["snapshots"]:
         return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
     qs, qe = s["queue_start"], s["queue_end"]
@@ -734,7 +734,7 @@ def render_day_html(s, tz=None, generated=None, d=None):
 
 
 def render_week_html(w, tz=None, generated=None, d=None):
-    title = "Weekly flow"
+    title = "Weekly Flow"
     if not w["days"]:
         return _page(title, "<p>No snapshots recorded this week.</p>", None, generated, tz)
     best = w["best"]
@@ -773,7 +773,7 @@ def _flow_embed(title_line, headline, fields, generated, color, tz=None):
         "description": f"**{headline}**\n{title_line}\n\U0001f552 Generated {long_stamp(generated, tz)}",
         "color": color,
         "fields": fields,
-        "footer": {"text": "Podcast Queue Report \u00b7 Daily flow"},
+        "footer": {"text": "Podcast Queue Report \u00b7 Daily Flow"},
         "timestamp": generated.astimezone(datetime.timezone.utc).replace(tzinfo=None).isoformat(),
     }]}
 
@@ -785,7 +785,7 @@ def _field(name, value, inline=True):
 def build_discord_day(s, generated=None, tz=None):
     generated = generated or utcnow()
     if not s["snapshots"]:
-        return {"content": f"Daily flow, {pretty_day(s['day'])}: no snapshots recorded."}
+        return {"content": f"Daily Flow, {pretty_day(s['day'])}: no snapshots recorded."}
     qs, qe = s["queue_start"], s["queue_end"]
     fields = [
         _field("__\U0001f3a7 Listened__",
@@ -820,14 +820,14 @@ def build_discord_day(s, generated=None, tz=None):
     if s.get("now_playing"):
         np = s["now_playing"]
         fields.append(_field("__\u25b6 Now playing__", f"{np['title']} \u2014 {np['podcast']}"[:300], inline=False))
-    return _flow_embed(f"Daily flow \u2014 {pretty_day(s['day'])}", day_headline(s), fields,
+    return _flow_embed(f"Daily Flow \u2014 {pretty_day(s['day'])}", day_headline(s), fields,
                        generated, rr.grade_int(qe.get("grade") or "D"), tz)
 
 
 def build_discord_week(w, generated=None, tz=None):
     generated = generated or utcnow()
     if not w["days"]:
-        return {"content": "Weekly flow: no snapshots recorded this week."}
+        return {"content": "Weekly Flow: no snapshots recorded this week."}
     best = w["best"]
     fields = [
         _field("__\U0001f3a7 Listened__",
@@ -841,7 +841,7 @@ def build_discord_week(w, generated=None, tz=None):
             for d in w["days"])[:1000], inline=False),
     ]
     first, last = w["days"][0]["day"], w["days"][-1]["day"]
-    return _flow_embed(f"Weekly flow \u2014 {first.strftime('%b %-d')} to {last.strftime('%b %-d')}",
+    return _flow_embed(f"Weekly Flow \u2014 {first.strftime('%b %-d')} to {last.strftime('%b %-d')}",
                        week_headline(w), fields, generated,
                        rr.grade_int(w["queue_end"].get("grade") or "D"), tz)
 
@@ -933,7 +933,7 @@ def write_flow_pages(history, day, d, generated, tz=None):
 def email_day(s, page_html, label):
     qe = s["queue_end"]
     subject = (
-        f"{label} \u2014 Daily flow, {pretty_day(s['day'])}: listened {dur(s['listened_seconds'])}, "
+        f"{label} \u2014 Daily Flow, {pretty_day(s['day'])}: listened {dur(s['listened_seconds'])}, "
         f"queue {qe['queue_count']} episodes"
     )
     return _send(email_payload(subject, page_html), "send_email.py")
@@ -965,7 +965,7 @@ def take_snapshot(label, quiet=False, open_report=False, history_path=None):
         email_day(s, render_day_html(s, None, generated, d), cfg_label)
         if "week" in paths:
             w = summarize_week(history, day)
-            _send(email_payload(f"{cfg_label} \u2014 Weekly flow: listened {dur(w['listened_seconds'])}",
+            _send(email_payload(f"{cfg_label} \u2014 Weekly Flow: listened {dur(w['listened_seconds'])}",
                                 render_week_html(w, None, generated, d)), "send_email.py")
     return snap
 
@@ -1032,7 +1032,7 @@ def main(argv=None):
         elif args.format == "html":
             print(render_day_html(s, None, None, d))
         else:
-            print(email_payload(f"Daily flow, {pretty_day(day)}", render_day_html(s, None, None, d)))
+            print(email_payload(f"Daily Flow, {pretty_day(day)}", render_day_html(s, None, None, d)))
     else:
         w = summarize_week(history, day)
         if args.format == "chat":
@@ -1040,7 +1040,7 @@ def main(argv=None):
         elif args.format == "html":
             print(render_week_html(w, None, None, d))
         else:
-            print(email_payload("Weekly flow", render_week_html(w, None, None, d)))
+            print(email_payload("Weekly Flow", render_week_html(w, None, None, d)))
     return 0
 
 
