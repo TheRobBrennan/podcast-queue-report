@@ -91,12 +91,16 @@ def queue_by_show(d, top=None):
     for e in d["queue"].get("episodes", []):
         name = e.get("podcast") or "Unknown"
         row = shows.setdefault(name, {"podcast": name, "count": 0, "seconds": 0, "oldest": None,
+                                      "oldest_title": None, "oldest_url": None, "oldest_duration": None,
                                       "artwork_url": None, "podcast_url": None})
         row["count"] += 1
         row["seconds"] += parse_fmt_seconds(e.get("duration_fmt"))
         pub = e.get("pubdate")
         if pub and (row["oldest"] is None or pub < row["oldest"]):
             row["oldest"] = pub
+            row["oldest_title"] = e.get("title")
+            row["oldest_url"] = e.get("episode_url")
+            row["oldest_duration"] = e.get("duration_fmt")
         row["artwork_url"] = row["artwork_url"] or e.get("artwork_url")
         row["podcast_url"] = row["podcast_url"] or e.get("podcast_url")
     ranked = sort_oldest_first(list(shows.values()))
@@ -693,10 +697,34 @@ def pile_rows(s, d=None, now=None):
     return [dict(r, age=waiting_age(r.get("oldest"), now)) for r in rows]
 
 
-def pile_line(row):
+def ago_phrase(seconds):
+    if seconds is None:
+        return ""
+    if seconds < 3600:
+        return "just now"
+    if seconds < 86400:
+        n = int(seconds // 3600)
+        return f"{n} hr{'' if n == 1 else 's'} ago"
+    n = int(seconds // 86400)
+    return f"{n} day{'' if n == 1 else 's'} ago"
+
+
+def published_label(oldest_iso, tz=None):
+    """"Tue, Oct 6" in local time."""
+    if not oldest_iso:
+        return ""
+    d = parse_utc(oldest_iso).astimezone(tz or ps.LOCAL_TZ)
+    return f"{d.strftime('%a, %b')} {d.day}"
+
+
+def pile_line(row, tz=None):
+    """One line for chat and Discord: the count, the listening time, and the
+    oldest episode with its date."""
     bits = [episodes_phrase(row["count"]), dur_n(row["seconds"])]
-    if row.get("age") is not None:
-        bits.append(f"oldest waiting {dur_n(row['age'])}")
+    if row.get("oldest_title"):
+        bits.append(f"oldest: {row['oldest_title']} ({published_label(row.get('oldest'), tz)})")
+    elif row.get("oldest"):
+        bits.append(f"oldest published {published_label(row['oldest'], tz)}")
     return " · ".join(bits)
 
 
@@ -1049,7 +1077,7 @@ def timeline_html(s, tz=None):
     )
 
 
-def piling_up_html(s, d=None):
+def piling_up_html(s, d=None, tz=None):
     rows = pile_rows(s, d)
     if not rows:
         return ""
@@ -1057,26 +1085,37 @@ def piling_up_html(s, d=None):
     for row in rows:
         art = ""
         if row.get("artwork_url"):
-            img = (f'<img src="{html.escape(row["artwork_url"])}" width="34" height="34" '
-                   'style="border-radius:6px;display:block;" alt="">')
+            img = (f'<img src="{html.escape(row["artwork_url"])}" width="40" height="40" '
+                   'style="border-radius:7px;display:block;" alt="">')
             art = (f'<a href="{html.escape(row["podcast_url"])}" target="_blank">{img}</a>'
                    if row.get("podcast_url") else img)
-        age = (f'<div style="font-size:12px;color:#b45309;font-weight:600;">oldest waiting {html.escape(dur_n(row["age"]))}</div>'
-               if row.get("age") is not None else "")
+        bullet = ""
+        when = ""
+        if row.get("oldest"):
+            when = f'{published_label(row["oldest"], tz)} · {ago_phrase(row.get("age"))}'
+        if row.get("oldest_title"):
+            bullet = (f'<div style="font-size:12px;margin-top:3px;color:#475569;">'
+                      f'• {_link(row["oldest_title"], row.get("oldest_url"), "#1e293b")}'
+                      f'<span style="color:#94a3b8;"> · {html.escape(when)}</span></div>')
+        elif when:
+            bullet = f'<div style="font-size:12px;margin-top:3px;color:#475569;">• oldest published {html.escape(when)}</div>'
+        more = (f'<div style="font-size:12px;color:#94a3b8;margin-top:2px;">+ {row["count"] - 1} more waiting</div>'
+                if row["count"] > 1 else "")
         items += (
-            '<div style="display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;">'
-            f'<div style="flex:0 0 34px;">{art}</div>'
-            f'<div style="flex:1;min-width:0;font-size:13px;font-weight:600;">'
-            f'{_link(row["podcast"], row.get("podcast_url"), "#1e293b")}</div>'
+            '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f1f5f9;">'
+            f'<div style="flex:0 0 40px;">{art}</div>'
+            '<div style="flex:1;min-width:0;">'
+            f'<div style="font-size:13px;font-weight:700;">{_link(row["podcast"], row.get("podcast_url"), "#1e293b")}</div>'
+            f'{bullet}{more}</div>'
             '<div style="text-align:right;font-size:12px;color:#64748b;white-space:nowrap;">'
-            f'{html.escape(episodes_phrase(row["count"]))} · {html.escape(dur_n(row["seconds"]))}{age}</div></div>'
+            f'{html.escape(episodes_phrase(row["count"]))}<br>{html.escape(dur_n(row["seconds"]))}</div></div>'
         )
     total = sum(r["count"] for r in rows)
     return (
         '<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
         'margin:24px 0 4px;">What&rsquo;s piling up</div>'
-        f'<div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">{len(rows)} shows, {total} episodes, '
-        'the longest-waiting first</div>'
+        f'<div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">{len(rows)} shows, {total} episodes. '
+        'Each show lists its oldest unplayed episode, the longest-waiting first</div>'
         + _white_card(items, 16)
     )
 
@@ -1169,7 +1208,7 @@ def render_day_html(s, tz=None, generated=None, d=None):
         nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
     parts.append(now_playing_card_html(np, nxt))
     parts.append(timeline_html(s, tz))
-    parts.append(piling_up_html(s, d))
+    parts.append(piling_up_html(s, d, tz))
     return _page(title, "".join(parts), day_headline(s), generated, tz,
                  queue_section_html(d) if d else "")
 

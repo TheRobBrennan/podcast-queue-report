@@ -259,16 +259,24 @@ class StoryTests(unittest.TestCase):
 
     def test_pile_section_lists_every_show_with_age_artwork_and_links(self):
         d = {"queue": {"episodes": [
-            {"podcast": "Old Show", "duration_fmt": "1 hr", "pubdate": "2026-10-06T07:00:00",
-             "artwork_url": "https://a/o.jpg", "podcast_url": "https://p/o"},
+            {"podcast": "Old Show", "title": "Old Ep", "episode_url": "https://e/o", "duration_fmt": "1 hr",
+             "pubdate": "2026-10-06T07:00:00", "artwork_url": "https://a/o.jpg", "podcast_url": "https://p/o"},
+            {"podcast": "Old Show", "title": "Newer Ep", "duration_fmt": "10 mins", "pubdate": "2026-10-12T07:00:00"},
             {"podcast": "Single Show", "duration_fmt": "10 mins", "pubdate": "2026-10-15T07:00:00"},
         ]}}
         s = {"by_show_snapshot": None}
         page = flow.piling_up_html(s, d)
-        for needle in ("2 shows, 2 episodes", "Old Show", "Single Show", 'src="https://a/o.jpg"',
-                       'href="https://p/o"', "oldest waiting"):
+        for needle in ("2 shows, 3 episodes", "Old Show", "Single Show", 'src="https://a/o.jpg"',
+                       'href="https://p/o"', "Tue, Oct 6", ">Old Ep</a>", "+ 1 more waiting", 'href="https://e/o"'):
             self.assertIn(needle, page)
         self.assertLess(page.index("Old Show"), page.index("Single Show"))
+
+    def test_ago_and_published_labels(self):
+        self.assertEqual(flow.ago_phrase(30 * 60), "just now")
+        self.assertEqual(flow.ago_phrase(5 * 3600), "5 hrs ago")
+        self.assertEqual(flow.ago_phrase(86400 * 1.2), "1 day ago")
+        self.assertEqual(flow.ago_phrase(86400 * 9.4), "9 days ago")
+        self.assertEqual(flow.published_label("2026-10-06T07:00:00", NY), "Tue, Oct 6")
 
     def test_no_by_show_data_means_no_section(self):
         self.assertEqual(flow.piling_up_html({"by_show_snapshot": None}), "")
