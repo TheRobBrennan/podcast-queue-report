@@ -397,7 +397,7 @@ class StoryTests(unittest.TestCase):
         s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
         page = flow.render_day_html(s, NY)
         self.assertEqual(page.count("since 9:00am EDT"), 3)  # finished, queue, arrivals
-        self.assertIn("episodes finished since 9:00am EDT", page)
+        self.assertIn("episodes finished", page)
 
     def test_every_card_value_is_the_same_size_and_never_wraps(self):
         for text in ("6 hrs 21 mins", "1 week 2 days 10 hrs 48 mins"):
@@ -784,9 +784,16 @@ class CardGridTests(unittest.TestCase):
         self.assertNotIn("<td", grid)
         self.assertNotIn("grid-column", grid)
 
-    def test_an_odd_card_takes_the_whole_row(self):
-        grid = flow.card_grid(["<div>a</div>", "<div>b</div>", "<div>c</div>"])
-        self.assertIn('<div style="grid-column:1 / -1;"><div>c</div></div>', grid)
+    def test_every_card_is_a_keycap_pill(self):
+        s = flow.summarize_day([snap("2026-10-16T09:00", "morning", 124),
+                                snap("2026-10-16T12:00", "manual", 121, 300000, 900000, 10, 20000)],
+                               datetime.date(2026, 10, 16), NY)
+        qs, qe = s["queue_start"], s["queue_end"]
+        for card in (flow.finished_card(s, qs, NY), flow.queue_card(qs, qe, NY), flow.arrivals_card(s, qs, NY)):
+            self.assertIn("\ufe0f\u20e3", card)
+            self.assertIn("border-radius:12px;padding:6px 14px", card)   # the same pill on all three
+        self.assertIn("#ede9fe", flow.finished_card(s, qs, NY))
+        self.assertIn("10 episodes finished", flow.finished_card(s, qs, NY))
 
     def test_the_page_has_three_cards_and_no_oldest_episode_card(self):
         history = [snap("2026-10-16T09:00", "morning", 120), snap("2026-10-16T12:00", "manual", 118, played_seconds=600)]

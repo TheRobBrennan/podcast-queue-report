@@ -866,11 +866,9 @@ def _card(label, value, sub="", hint="", value_html=None, sub_html=None, extra_h
 
 
 def card_grid(cards):
-    """Two cards across, every row as tall as its tallest card."""
-    body = "".join(cards[:-1] if len(cards) % 2 else cards)
-    if len(cards) % 2:
-        body += f'<div style="grid-column:1 / -1;">{cards[-1]}</div>'   # an odd one out takes the whole row
-    return ('<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">'
+    """Cards side by side (as many as fit), every row as tall as its tallest card."""
+    body = "".join(cards)
+    return ('<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:16px;">'
             + body + "</div>")
 
 
@@ -917,9 +915,24 @@ def arrivals_line(count, arrived_seconds, listened_seconds, since):
     return f'<span style="color:{fg};font-weight:600;">\u25b2 {html.escape(noun)} {html.escape(since)}</span>'
 
 
+def pill_card(label, count, bg, fg, sub_html):
+    """A card whose big number is a count in keycap digits on a tinted pill,
+    with one colored line underneath: the same look for every card."""
+    return (
+        '<div style="background:#ffffff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">'
+        '<div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#94a3b8;'
+        f'letter-spacing:0.6px;margin-bottom:8px;">{html.escape(label)}</div>'
+        f'<div><span style="display:inline-block;background:{bg};border-radius:12px;padding:6px 14px;'
+        f'font-size:30px;line-height:1.15;letter-spacing:2px;">{keycaps(count)}</span></div>'
+        f'<div style="font-size:13px;margin-top:10px;line-height:1.4;">'
+        f'<span style="color:{fg};font-weight:600;">{sub_html}</span></div>'
+        '</div>'
+    )
+
+
 def queue_card(qs, qe, tz=None):
-    """The queue as its count in big keycap digits on green (shorter than when
-    the day started), yellow (the same), or red (longer)."""
+    """The queue as its count in big keycap digits on green (shorter than the
+    start of the day), yellow (the same), or red (longer)."""
     tone = queue_tone(qs["queue_count"], qe["queue_count"])
     bg, fg, arrow = QUEUE_TONES[tone]
     delta = qe["queue_count"] - qs["queue_count"]
@@ -929,18 +942,23 @@ def queue_card(qs, qe, tz=None):
     sub = {"better": f"{arrow} {noun} {since}",
            "same": f"{arrow} No change {since}",
            "worse": f"{arrow} {noun} {since}"}[tone]
-    value_html = (f'<span style="display:inline-block;background:{bg};border-radius:12px;'
-                  f'padding:6px 14px;font-size:30px;line-height:1.15;letter-spacing:2px;">'
-                  f'{keycaps(qe["queue_count"])}</span>')
-    sub_html = f'<span style="color:{fg};font-weight:600;">{html.escape(sub)}</span>'
-    return (
-        '<div style="background:#ffffff;border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">'
-        '<div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#94a3b8;'
-        'letter-spacing:0.6px;margin-bottom:8px;">Episodes in your queue</div>'
-        f'<div>{value_html}</div>'
-        f'<div style="font-size:13px;margin-top:10px;">{sub_html}</div>'
-        '</div>'
-    )
+    return pill_card("Episodes in your queue", qe["queue_count"], bg, fg, html.escape(sub))
+
+
+def finished_card(s, qs, tz=None):
+    """How many episodes you finished, in indigo, with the audio they add up to."""
+    n = s["listened_count"]
+    sub = f"{episodes_phrase(n)} finished · {dur_n(s['listened_seconds'], 3)} of audio {since_label(qs, tz)}"
+    return pill_card("Finished", n, "#ede9fe", "#6d28d9", html.escape(sub))
+
+
+def arrivals_card(s, qs, tz=None):
+    """How many episodes arrived: blue when you finished more than arrived,
+    yellow when about even, red when more arrived than you finished."""
+    tone = arrivals_tone(s["arrivals_seconds"], s["listened_seconds"])
+    bg = {"better": "#dbeafe", "same": QUEUE_TONES["same"][0], "worse": QUEUE_TONES["worse"][0]}[tone]
+    sub = f"\u25b2 {dur_n(s['arrivals_seconds'], 3)} of new episodes {since_label(qs, tz)}"
+    return pill_card("New arrivals", s["arrivals_count"], bg, ARRIVAL_COLORS[tone], html.escape(sub))
 
 
 def utcnow():
@@ -1344,14 +1362,7 @@ def render_day_html(s, tz=None, generated=None, d=None):
     if not s["snapshots"]:
         return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
     qs, qe = s["queue_start"], s["queue_end"]
-    cards = [
-        _card("Finished", dur(s["listened_seconds"]),
-              f"{s['listened_count']} episode{'' if s['listened_count'] == 1 else 's'} finished {since_label(qs, tz)}"),
-        queue_card(qs, qe, tz),
-        _card("New arrivals", dur(s["arrivals_seconds"]),
-              sub_html=arrivals_line(s["arrivals_count"], s["arrivals_seconds"], s["listened_seconds"],
-                                     since_label(qs, tz))),
-    ]
+    cards = [finished_card(s, qs, tz), queue_card(qs, qe, tz), arrivals_card(s, qs, tz)]
     started = in_progress_episodes(d) if d else ((s.get("in_progress_snapshot") or {}).get("in_progress") or [])
     np, nxt = s.get("now_playing"), s.get("up_next")
     if d and d.get("now_playing"):
