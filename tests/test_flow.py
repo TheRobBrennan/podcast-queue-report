@@ -532,6 +532,20 @@ class GeneratedAndQueueTests(unittest.TestCase):
         self.assertEqual(page.count("</body>"), 1)
         self.assertEqual(page.count("display:inline-block;margin:0 2px;"), 21)  # one emoji row only
 
+    def test_discord_day_images_payload_attaches_each_picture(self):
+        payload = flow.build_discord_day_images(self.s, ["/x/daily-flow-1.png", "/x/daily-flow-2.png"], self.generated, NY)
+        self.assertEqual(payload["_files"], ["/x/daily-flow-1.png", "/x/daily-flow-2.png"])
+        urls = [e["image"]["url"] for e in payload["embeds"]]
+        self.assertEqual(urls, ["attachment://daily-flow-1.png", "attachment://daily-flow-2.png"])
+        self.assertIn("footer", payload["embeds"][-1])
+
+    def test_day_top_pages_are_three_separate_pages(self):
+        pages = flow.render_day_top_pages(self.s, NY, self.generated, None)
+        self.assertEqual(len(pages), 3)
+        self.assertIn("DAILY FLOW", pages[0])
+        self.assertNotIn("DAILY FLOW", pages[1])
+        self.assertIn("Finished episodes", pages[2])
+
     def test_discord_day_shows_the_queue_line_and_episodes_in_progress(self):
         payload = flow.build_discord_day(self.s, self.generated, NY)
         fields = {f["name"]: f["value"] for f in payload["embeds"][0]["fields"]}

@@ -35,6 +35,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import urllib.parse
 
 import podcast_summary as ps
 import render_report as rr
@@ -994,24 +996,28 @@ def queue_section_html(d):
     )
 
 
-def _page(title, body, headline=None, generated=None, tz=None, queue_html=""):
+def _page(title, body, headline=None, generated=None, tz=None, queue_html="", header=True, footer=True):
     generated = generated or utcnow()
     headline_html = (
         f'<div style="text-align:center;font-size:20px;font-weight:600;margin-bottom:8px;">'
         f'{html.escape(headline)}</div>' if headline else ""
     )
     pill = generated_pill(generated, tz)
+    top_html = (
+        f'<div style="text-align:center;font-size:25px;line-height:1.3;margin-bottom:16px;white-space:nowrap;">{emoji_row_html()}</div>\n'
+        f'{headline_html}\n'
+        f'<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;letter-spacing:0.6px;">{html.escape(upper_keep_ordinal(title))}</div>\n'
+        f'<div style="text-align:center;margin:10px 0 4px;">{pill}</div>'
+    ) if header else ""
+    bottom_html = f'<div style="text-align:center;margin-top:32px;">{pill}</div>' if footer else ""
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>{html.escape(title)} · Podcast Queue Report</title></head>
 <body style="margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
 <div style="max-width:720px;margin:0 auto;padding:32px 20px;">
-<div style="text-align:center;font-size:25px;line-height:1.3;margin-bottom:16px;white-space:nowrap;">{emoji_row_html()}</div>
-{headline_html}
-<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;letter-spacing:0.6px;">{html.escape(upper_keep_ordinal(title))}</div>
-<div style="text-align:center;margin:10px 0 4px;">{pill}</div>
+{top_html}
 {body}
 {queue_html}
-<div style="text-align:center;margin-top:32px;">{pill}</div>
+{bottom_html}
 </div></body></html>"""
 
 
@@ -1357,10 +1363,9 @@ def in_progress_html(items, tz=None):
     )
 
 
-def render_day_html(s, tz=None, generated=None, d=None):
-    title = f"Daily Flow — {pretty_day_full(s['day'])}"
-    if not s["snapshots"]:
-        return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
+def _day_top_parts(s, tz=None, d=None):
+    """The web report's top sections as html: chart, now playing and episodes
+    in progress, then the cards and highlights."""
     qs, qe = s["queue_start"], s["queue_end"]
     cards = [finished_card(s, qs, tz), queue_card(qs, qe, tz), arrivals_card(s, qs, tz)]
     started = in_progress_episodes(d) if d else ((s.get("in_progress_snapshot") or {}).get("in_progress") or [])
@@ -1368,16 +1373,31 @@ def render_day_html(s, tz=None, generated=None, d=None):
     if d and d.get("now_playing"):
         np = d["now_playing"]
         nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
-    parts = [queue_chart_svg(s, tz).replace("margin:8px 0 4px;", "margin:20px 0 4px;", 1),
-             now_playing_card_html(np, nxt),
-             in_progress_html(started, tz),
-             card_grid(cards)]
+    chart = queue_chart_svg(s, tz).replace("margin:8px 0 4px;", "margin:20px 0 4px;", 1)
+    playing = now_playing_card_html(np, nxt) + in_progress_html(started, tz)
+    stats = card_grid(cards)
     hl = highlights(s, tz)
     if hl:
         items = "".join(f'<div style="margin:6px 0;font-size:14px;">{icon} {html.escape(line)}</div>' for icon, line in hl)
-        parts.append(_white_card(items, 20))
-    parts.append(timeline_html(s, tz))
-    parts.append(piling_up_html(s, d, tz))
+        stats += _white_card(items, 20)
+    return chart, playing, stats
+
+
+def render_day_top_pages(s, tz=None, generated=None, d=None):
+    """The top of the report as separate pages, one per picture for Discord."""
+    title = f"Daily Flow — {pretty_day_full(s['day'])}"
+    chart, playing, stats = _day_top_parts(s, tz, d)
+    return [_page(title, chart, day_headline(s), generated, tz, footer=False),
+            _page(title, playing, None, generated, tz, header=False, footer=False),
+            _page(title, stats, None, generated, tz, header=False, footer=False)]
+
+
+def render_day_html(s, tz=None, generated=None, d=None):
+    title = f"Daily Flow — {pretty_day_full(s['day'])}"
+    if not s["snapshots"]:
+        return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
+    chart, playing, stats = _day_top_parts(s, tz, d)
+    parts = [chart, playing, stats, timeline_html(s, tz), piling_up_html(s, d, tz)]
     return _page(title, "".join(parts), day_headline(s), generated, tz,
                  queue_section_html(d) if d else "")
 
@@ -1519,6 +1539,66 @@ def build_discord_day(s, generated=None, tz=None, d=None):
                        generated, rr.grade_int(qe.get("grade") or "D"), tz)
 
 
+CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+IMAGE_WIDTH = 680
+IMAGE_SCALE = 2
+
+
+def capture_day_images(s, generated, d, tz=None, out_dir=None):
+    """Render the top of the web report (header and chart, now playing and
+    episodes in progress, cards and highlights) as PNGs, one per section, so
+    Discord shows the same design as the page. Returns file paths, or [] when
+    Chrome is unavailable."""
+    if not os.path.exists(CHROME):
+        return []
+    out_dir = out_dir or tempfile.mkdtemp(prefix="flow_png_")
+    base = [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars"]
+    files = []
+    for i, page in enumerate(render_day_top_pages(s, tz, generated, d), 1):
+        probe = page.replace("</body>", (
+            '<script>window.addEventListener("load",()=>{document.body.setAttribute("data-h",'
+            'Math.ceil(document.body.firstElementChild.getBoundingClientRect().bottom+scrollY))})</script></body>'), 1)
+        html_path = os.path.join(out_dir, f"page-{i}.html")
+        with open(html_path, "w") as f:
+            f.write(probe)
+        url = "file://" + urllib.parse.quote(html_path)
+        dom = subprocess.run(base + [f"--window-size={IMAGE_WIDTH},900", "--virtual-time-budget=5000", "--dump-dom", url],
+                             capture_output=True, text=True).stdout
+        m = re.search(r'data-h="(\d+)"', dom)
+        if not m:
+            return []
+        path = os.path.join(out_dir, f"daily-flow-{i}.png")
+        subprocess.run(base + [f"--force-device-scale-factor={IMAGE_SCALE}",
+                               f"--window-size={IMAGE_WIDTH},{int(m.group(1))}",
+                               f"--screenshot={path}", url], capture_output=True)
+        if not os.path.exists(path):
+            return []
+        files.append(path)
+    return files
+
+
+def build_discord_day_images(s, files, generated=None, tz=None):
+    """The same report as pictures: one embed per section image, stacked."""
+    generated = generated or utcnow()
+    color = rr.grade_int(s["queue_end"].get("grade") or "D")
+    embeds = [{"color": color, "image": {"url": f"attachment://{os.path.basename(p)}"}} for p in files]
+    embeds[-1]["footer"] = {"text": f"Podcast Queue Report \u00b7 Daily Flow \u00b7 {pretty_day(s['day'])}"}
+    embeds[-1]["timestamp"] = generated.astimezone(datetime.timezone.utc).replace(tzinfo=None).isoformat()
+    return {"embeds": embeds, "_files": files}
+
+
+def discord_day_payload(s, generated=None, d=None, tz=None):
+    """Pictures of the web report's top sections; the text embed when they can't be made."""
+    if s["snapshots"]:
+        try:
+            files = capture_day_images(s, generated or utcnow(), d, tz)
+        except Exception:
+            files = []
+        if files:
+            return build_discord_day_images(s, files, generated, tz)
+    return build_discord_day(s, generated, tz, d)
+
+
 def build_discord_week(w, generated=None, tz=None):
     generated = generated or utcnow()
     if not w["days"]:
@@ -1652,7 +1732,7 @@ def take_snapshot(label, quiet=False, open_report=False, history_path=None):
     if not quiet and label != "pulse":
         _pipe(["discord"], "post_discord.py")
         if label in DISCORD_FLOW_LABELS:
-            _send(json.dumps(build_discord_day(s, generated, None, d)), "post_discord.py")
+            _send(json.dumps(discord_day_payload(s, generated, d)), "post_discord.py")
         if label == "evening" and day.weekday() == 6:
             w = summarize_week(history, day)
             _send(json.dumps(build_discord_week(w, generated)), "post_discord.py")
@@ -1740,7 +1820,7 @@ def main(argv=None):
         if args.format == "chat":
             print(render_day_chat(s))
         elif args.format == "discord":
-            print(json.dumps(build_discord_day(s, None, None, d)))
+            print(json.dumps(discord_day_payload(s, None, d)))
         elif args.format == "html":
             print(render_day_html(s, None, None, d))
         else:
