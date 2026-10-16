@@ -948,7 +948,7 @@ def queue_card(qs, qe, tz=None):
 def finished_card(s, qs, tz=None):
     """How many episodes you finished, in indigo, with the audio they add up to."""
     n = s["listened_count"]
-    sub = f"{dur_n(s['listened_seconds'], 2)} of audio"
+    sub = f"\U0001F3A7 {dur_n(s['listened_seconds'], 2)} of audio"
     return pill_card("Finished episodes", n, "#ede9fe", "#6d28d9", html.escape(sub))
 
 
