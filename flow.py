@@ -611,7 +611,7 @@ def since_label(snap, tz=None):
 
 
 def arrivals_tone(arrived, listened):
-    """Green when you listened to more than arrived, yellow within 10% of it,
+    """Blue when you listened to more than arrived, yellow within 10% of it,
     red when more arrived than you listened to."""
     if arrived > listened * 1.1:
         return "worse"
@@ -620,9 +620,14 @@ def arrivals_tone(arrived, listened):
     return "same"
 
 
+ARRIVAL_COLORS = {"better": "#1d4ed8", "same": QUEUE_TONES["same"][1], "worse": QUEUE_TONES["worse"][1]}
+
+
 def arrivals_line(count, arrived_seconds, listened_seconds, since):
+    """Blue when you listened to more than arrived (arrivals are not 'good',
+    so no green), yellow when about even, red when more arrived."""
     tone = arrivals_tone(arrived_seconds, listened_seconds)
-    _, fg, _ = QUEUE_TONES[tone]
+    fg = ARRIVAL_COLORS[tone]
     noun = f"{count} episode" + ("" if count == 1 else "s")
     return f'<span style="color:{fg};font-weight:600;">\u25b2 {html.escape(noun)} {html.escape(since)}</span>'
 

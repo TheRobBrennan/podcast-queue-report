@@ -358,9 +358,9 @@ class StoryTests(unittest.TestCase):
         c = snap("2026-10-16T13:00", queue_count=100, played_count=1)
         self.assertEqual(flow.arrivals_count(b, c), 0)
 
-    def test_arrivals_line_is_green_yellow_or_red(self):
+    def test_arrivals_line_is_blue_yellow_or_red(self):
         since = "since 9:00am EDT"
-        self.assertIn("#15803d", flow.arrivals_line(2, 3000, 10000, since))   # listened more than arrived
+        self.assertIn("#1d4ed8", flow.arrivals_line(2, 3000, 10000, since))   # listened more than arrived: blue
         self.assertIn("#a16207", flow.arrivals_line(5, 10200, 10000, since))  # about even
         red = flow.arrivals_line(9, 20000, 10000, since)
         self.assertIn("#b91c1c", red)
