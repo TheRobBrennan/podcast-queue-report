@@ -375,7 +375,7 @@ class StoryTests(unittest.TestCase):
         ]
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
         self.assertEqual((s["listened_seconds"], s["listened_count"]), (7200, 3))
-        self.assertEqual(flow.window_sentence(s["windows"][0]), "First reading of the day · queue 120")
+        self.assertEqual(flow.window_sentence(s["windows"][0]), "First reading of the day · 120 episodes in the queue")
         self.assertEqual(s["biggest_listen"]["snap"]["label"], "manual")
 
     def test_every_card_says_since_the_same_time(self):
@@ -612,6 +612,68 @@ class TagDashTests(unittest.TestCase):
         rows, _, _ = flow.tag_dash(self.history, self.day, datetime.time(10, 11), datetime.time(18, 18), NY)
         s = flow.summarize_day(rows, self.day, NY)
         self.assertEqual(len(s["dashes"]), 1)
+
+
+class WindowStoryTests(unittest.TestCase):
+    def window(self, played_count, played, qd, arrivals, q=120):
+        return {"snap": {"queue_count": q, "played_count": played_count}, "played": played,
+                "queue_delta": qd, "arrivals_count": arrivals, "first": False}
+
+    def test_what_was_playing_is_shown_only_when_it_changes(self):
+        playing = {"title": "Same Episode", "podcast": "Show", "artwork_url": "https://a/1.jpg"}
+        history = [snap("2026-10-16T08:00", "morning"), snap("2026-10-16T09:00"), snap("2026-10-16T10:00"),
+                   snap("2026-10-16T11:00")]
+        for h in history[1:3]:
+            h["now_playing"] = dict(playing)
+        history[3]["now_playing"] = dict(playing, title="Different Episode")
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        page = flow.render_day_html(s, NY)
+        self.assertEqual(page.count("Same Episode"), 1)
+        self.assertEqual(page.count("Different Episode"), 1)
+
+    def test_window_label_adds_am_pm_only_when_the_window_crosses_noon(self):
+        a = snap("2026-10-16T14:00", since_local_iso="2026-10-16T12:00")
+        b = snap("2026-10-16T12:06", since_local_iso="2026-10-16T10:06")
+        self.assertEqual(flow.window_label(a, NY), "12:00\u20132:00pm")
+        self.assertEqual(flow.window_label(b, NY), "10:06am\u201312:06pm")
+
+    def test_listening_that_shrinks_the_queue(self):
+        text, tone, delta = flow.window_story(self.window(3, 9000, -3, 0, 122))
+        self.assertEqual(text, "Listened to 3 episodes (2 hrs 30 mins) · queue down 3 to 122")
+        self.assertEqual((tone, delta), ("better", -3))
+
+    def test_listening_outpaced_by_arrivals(self):
+        text, tone, delta = flow.window_story(self.window(1, 2400, 2, 3, 126))
+        self.assertEqual(text, "Listened to 1 episode (40 mins) · 3 episodes landed, so the queue grew 2 to 126")
+        self.assertEqual(tone, "worse")
+
+    def test_arrivals_keeping_pace(self):
+        text, tone, _ = flow.window_story(self.window(2, 3000, 0, 2, 121))
+        self.assertEqual(text, "Listened to 2 episodes (50 mins) · new arrivals kept pace, queue steady at 121")
+        self.assertEqual(tone, "same")
+
+    def test_a_quiet_window(self):
+        text, tone, _ = flow.window_story(self.window(0, 0, 0, 0, 121))
+        self.assertEqual(text, "Nothing played · queue steady at 121")
+        text, tone, _ = flow.window_story(self.window(0, 0, 3, 3, 124))
+        self.assertEqual(text, "Nothing played · 3 episodes landed, so the queue grew 3 to 124")
+
+    def test_timeline_shows_the_window_the_artwork_and_the_dash_in_words(self):
+        history = [
+            snap("2026-10-16T08:00", "morning", 120, 300000, 900000, 0, 0),
+            snap("2026-10-16T10:00", "dash-start", 120, 300000, 900000, 1, 600),
+            snap("2026-10-16T18:00", "dash-end", 117, 290000, 860000, 3, 9000),
+        ]
+        history[2]["now_playing"] = {"title": "Pregame", "podcast": "Kraken Audio", "episode_url": "https://e/1",
+                                     "podcast_url": "https://p/1", "artwork_url": "https://a/1.jpg"}
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        page = flow.render_day_html(s, NY)
+        self.assertIn("4:00\u20136:00pm", page)
+        self.assertIn("8:00\u201310:00am", page)
+        self.assertIn("Listened to 3 episodes (2 hrs 30 mins) · queue down 3 to 117", page)
+        self.assertIn('src="https://a/1.jpg"', page)
+        self.assertIn('href="https://e/1"', page)
+        self.assertIn("you listened to 3 episodes (2 hrs 30 mins), the queue got 2 hrs 46 mins shorter, and your oldest episode improved by 11 hrs 6 mins", page)
 
 
 class RenderTests(unittest.TestCase):

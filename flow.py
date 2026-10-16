@@ -204,6 +204,7 @@ def summarize_day(history, day, tz=None):
                 "start": open_start,
                 "end": s,
                 "listened_seconds": sum(x["played_seconds"] for x in window),
+                "listened_count": sum(x["played_count"] for x in window),
                 "queue_seconds_delta": s["queue_seconds"] - open_start["queue_seconds"],
                 "queue_count_delta": s["queue_count"] - open_start["queue_count"],
                 "behind_delta": s["behind_seconds"] - open_start["behind_seconds"],
@@ -533,19 +534,36 @@ def label_name(snap):
     return f"{icon} {name}" + (" ≈" if snap.get("approx") else "")
 
 
-def window_sentence(w):
+def episodes_phrase(n):
+    return f"{n} episode" + ("" if n == 1 else "s")
+
+
+def window_story(w):
+    """One reading's window in plain words. Returns (text, tone, delta): tone is
+    "better"/"same"/"worse" for the queue and delta its change, or None for the
+    day's first reading."""
     sn = w["snap"]
+    q = sn["queue_count"]
     if w.get("first"):
-        return f"First reading of the day · queue {sn['queue_count']}"
-    bits = [f"Listened {dur_n(w['played'])}" if w["played"] > 0 else "Nothing played"]
-    qd = w["queue_delta"]
-    if qd is None:
-        bits.append(f"queue {sn['queue_count']}")
-    elif qd == 0:
-        bits.append(f"queue steady at {sn['queue_count']}")
+        return f"First reading of the day · {episodes_phrase(q)} in the queue", None, None
+    played, n = w["played"], sn["played_count"]
+    qd, arr = w["queue_delta"], w.get("arrivals_count") or 0
+    head = f"Listened to {episodes_phrase(n)} ({dur_n(played)})" if played > 0 else "Nothing played"
+    if qd < 0:
+        tail, tone = f"queue down {abs(qd)} to {q}", "better"
+    elif qd > 0:
+        tail = (f"{episodes_phrase(arr)} landed, so the queue grew {qd} to {q}" if arr
+                else f"queue up {qd} to {q}")
+        tone = "worse"
     else:
-        bits.append(f"queue {sn['queue_count']} ({qd:+d})")
-    return " · ".join(bits)
+        tail = (f"new arrivals kept pace, queue steady at {q}" if played > 0 and arr
+                else f"queue steady at {q}")
+        tone = "same"
+    return f"{head} · {tail}", tone, qd
+
+
+def window_sentence(w):
+    return window_story(w)[0]
 
 
 def pace_line(s):
@@ -931,10 +949,41 @@ def _white_card(inner, margin=16, extra=""):
             f'box-shadow:0 1px 3px rgba(0,0,0,0.08);{extra}">{inner}</div>')
 
 
+def window_label(snap, tz=None):
+    """"2:06\u20134:06pm", or "10:06am\u201312:06pm" when the window crosses noon."""
+    start = local_dt(snap, tz, key="since")
+    end = local_dt(snap, tz)
+    s_ap, e_ap = start.strftime("%p").lower(), end.strftime("%p").lower()
+    s_txt = start.strftime("%-I:%M")
+    return (f"{s_txt}\u2013{end.strftime('%-I:%M')}{e_ap}" if s_ap == e_ap
+            else f"{s_txt}{s_ap}\u2013{end.strftime('%-I:%M')}{e_ap}")
+
+
+def mini_playing_html(np):
+    """What was playing at a reading: small artwork, linked title and show."""
+    if not np or not np.get("title"):
+        return ""
+    art = ""
+    if np.get("artwork_url"):
+        img = (f'<img src="{html.escape(np["artwork_url"])}" width="36" height="36" '
+               'style="border-radius:6px;display:block;" alt="">')
+        link = np.get("episode_url") or np.get("podcast_url")
+        art = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
+    return (
+        '<div style="display:flex;gap:10px;align-items:center;margin-top:8px;">'
+        + (f'<div style="flex:0 0 36px;">{art}</div>' if art else "")
+        + '<div style="flex:1;min-width:0;font-size:12px;line-height:1.35;">'
+        '<span style="color:#047857;font-weight:700;">▶ Playing</span> '
+        f'{_link(np["title"], np.get("episode_url"), "#065f46", 600)}'
+        f'<div style="color:#64748b;">{_link(np.get("podcast"), np.get("podcast_url"), "#64748b")}</div></div></div>'
+    )
+
+
 def timeline_html(s, tz=None):
     peak = max([w["played"] for w in s["windows"]] + [1])
     in_dash = False
     rows = ""
+    last_playing = None
     for w in s["windows"]:
         sn = w["snap"]
         shaded = in_dash or sn["label"] == "dash-end"
@@ -942,18 +991,27 @@ def timeline_html(s, tz=None):
         width = max(3, round(100 * w["played"] / peak)) if w["played"] > 0 else 0
         bar = (f'<div style="height:10px;border-radius:5px;background:{"#38bdf8" if shaded else "#34d399"};width:{width}%;"></div>'
                if width else '<div style="font-size:11px;color:#cbd5e1;">·</div>')
-        playing = ""
-        if sn.get("now_playing"):
-            np = sn["now_playing"]
-            playing = (f'<div style="font-size:12px;color:#047857;margin-top:3px;">▶ {html.escape(np.get("title") or "")}'
-                       f' — {html.escape(np.get("podcast") or "")}</div>')
+        text, tone, delta = window_story(w)
+        chip = ""
+        if tone:
+            bg, fg, arrow = QUEUE_TONES[tone]
+            chip = (f'<span style="display:inline-block;background:{bg};color:{fg};font-weight:700;font-size:12px;'
+                    f'border-radius:10px;padding:1px 8px;margin-right:8px;white-space:nowrap;">'
+                    f'{arrow}{"" if not delta else " " + str(abs(delta))}</span>')
+        when = clock(sn, tz) if w.get("first") else window_label(sn, tz)
+        # show what was playing only when it changes, not on every row of one long episode
+        np = sn.get("now_playing")
+        playing_html = mini_playing_html(np) if np and np.get("title") != last_playing else ""
+        if np:
+            last_playing = np.get("title")
         rows += (
             f'<tr style="{dash_style}">'
-            f'<td style="padding:10px 12px;white-space:nowrap;vertical-align:top;">'
-            f'<div style="font-weight:700;">{clock(sn, tz)}</div>'
+            f'<td style="padding:12px;white-space:nowrap;vertical-align:top;">'
+            f'<div style="font-weight:700;font-size:14px;">{html.escape(when)}</div>'
             f'<div style="font-size:12px;color:#64748b;">{html.escape(label_name(sn))}</div></td>'
-            f'<td style="padding:10px 12px;width:34%;vertical-align:middle;">{bar}</td>'
-            f'<td style="padding:10px 12px;font-size:13px;vertical-align:top;">{html.escape(window_sentence(w))}{playing}</td>'
+            f'<td style="padding:12px;width:26%;vertical-align:middle;">{bar}</td>'
+            f'<td style="padding:12px;font-size:13px;vertical-align:top;line-height:1.4;">{chip}{html.escape(text)}'
+            f'{playing_html}</td>'
             '</tr>'
         )
         if sn["label"] == "dash-start":
@@ -962,12 +1020,18 @@ def timeline_html(s, tz=None):
             in_dash = False
             for dsh in s["dashes"]:
                 if dsh["end"] is sn:
+                    qd, bd = dsh["queue_seconds_delta"], dsh["behind_delta"]
+                    queue_bit = ("the queue got " + (f"{dur_n(abs(qd))} shorter" if qd < 0 else f"{dur_n(qd)} longer")
+                                 if qd else "the queue didn't move")
+                    age_bit = (f"improved by {dur_n(bd)}" if bd < 0
+                               else f"slipped by {dur_n(bd)}" if bd > 0 else "stayed the same")
                     rows += (
                         '<tr style="background:#e0f2fe;border-left:4px solid #38bdf8;">'
-                        f'<td colspan="3" style="padding:8px 12px;font-size:13px;font-weight:600;color:#0369a1;">'
-                        f'🚐 Dash {clock(dsh["start"], tz)}–{clock(dsh["end"], tz)}: listened '
-                        f'{html.escape(dur_n(dsh["listened_seconds"]))}, queue {html.escape(signed(dsh["queue_seconds_delta"]))}, '
-                        f'behind {html.escape(behind_phrase(dsh["behind_delta"]))}</td></tr>'
+                        f'<td colspan="3" style="padding:10px 12px;font-size:13px;font-weight:600;color:#0369a1;">'
+                        f'🚐 Dash {clock(dsh["start"], tz)}\u2013{clock(dsh["end"], tz)}: you listened to '
+                        f'{html.escape(episodes_phrase(dsh["listened_count"]))} ({html.escape(dur_n(dsh["listened_seconds"]))}), '
+                        f'{html.escape(queue_bit)}, and your oldest episode {html.escape(age_bit)}'
+                        '</td></tr>'
                     )
     note = ('<div style="font-size:11px;color:#94a3b8;margin-top:8px;">≈ labeled from the nearest scheduled reading</div>'
             if any(w["snap"].get("approx") for w in s["windows"]) else "")
