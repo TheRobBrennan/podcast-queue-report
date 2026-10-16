@@ -590,9 +590,10 @@ def queue_card(qs, qe, tz=None):
     since = f"since {clock(qs, tz)}"
     n = abs(delta)
     noun = f"{n} episode" + ("" if n == 1 else "s")
-    sub = {"better": f"{arrow} {noun} {since}",
-           "same": f"{arrow} Same {since}",
-           "worse": f"{arrow} {noun} {since}"}[tone]
+    start = qs["queue_count"]
+    sub = {"better": f"{arrow} {noun} from {start} {since}",
+           "same": f"{arrow} No change from {start} {since}",
+           "worse": f"{arrow} {noun} from {start} {since}"}[tone]
     value_html = (f'<span style="display:inline-block;background:{bg};border-radius:12px;'
                   f'padding:6px 14px;font-size:30px;line-height:1.15;letter-spacing:2px;">'
                   f'{keycaps(qe["queue_count"])}</span>')
