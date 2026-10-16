@@ -84,7 +84,7 @@ def parse_fmt_seconds(text):
     return total
 
 
-def queue_by_show(d, top=None):
+def queue_by_show(d, top=None, episodes=False):
     """The queue grouped by show: episode count, listening time, the oldest
     waiting episode, and the show's artwork and link."""
     shows = {}
@@ -95,6 +95,10 @@ def queue_by_show(d, top=None):
                                       "artwork_url": None, "podcast_url": None})
         row["count"] += 1
         row["seconds"] += parse_fmt_seconds(e.get("duration_fmt"))
+        if episodes:
+            row.setdefault("episodes", []).append({
+                "title": e.get("title"), "url": e.get("episode_url"),
+                "pubdate": e.get("pubdate"), "duration_fmt": e.get("duration_fmt")})
         pub = e.get("pubdate")
         if pub and (row["oldest"] is None or pub < row["oldest"]):
             row["oldest"] = pub
@@ -103,6 +107,9 @@ def queue_by_show(d, top=None):
             row["oldest_duration"] = e.get("duration_fmt")
         row["artwork_url"] = row["artwork_url"] or e.get("artwork_url")
         row["podcast_url"] = row["podcast_url"] or e.get("podcast_url")
+    for row in shows.values():
+        if "episodes" in row:
+            row["episodes"].sort(key=lambda x: (x["pubdate"] is None, x["pubdate"] or ""))
     ranked = sort_oldest_first(list(shows.values()))
     return ranked[:top] if top else ranked
 
@@ -690,7 +697,7 @@ def pile_rows(s, d=None, now=None):
     full queue when there is one, else the latest reading that recorded it."""
     now = now or utcnow()
     if d:
-        rows = queue_by_show(d)
+        rows = queue_by_show(d, episodes=True)
     else:
         snap = s.get("by_show_snapshot")
         rows = sort_oldest_first(list(snap.get("by_show") or [])) if snap else []
@@ -1082,6 +1089,7 @@ def piling_up_html(s, d=None, tz=None):
     if not rows:
         return ""
     items = ""
+    now_utc = utcnow()
     for row in rows:
         art = ""
         if row.get("artwork_url"):
@@ -1089,24 +1097,28 @@ def piling_up_html(s, d=None, tz=None):
                    'style="border-radius:7px;display:block;" alt="">')
             art = (f'<a href="{html.escape(row["podcast_url"])}" target="_blank">{img}</a>'
                    if row.get("podcast_url") else img)
-        bullet = ""
-        when = ""
-        if row.get("oldest"):
-            when = f'{published_label(row["oldest"], tz)} · {ago_phrase(row.get("age"))}'
-        if row.get("oldest_title"):
-            bullet = (f'<div style="font-size:12px;margin-top:3px;color:#475569;">'
-                      f'• {_link(row["oldest_title"], row.get("oldest_url"), "#1e293b")}'
-                      f'<span style="color:#94a3b8;"> · {html.escape(when)}</span></div>')
-        elif when:
-            bullet = f'<div style="font-size:12px;margin-top:3px;color:#475569;">• oldest published {html.escape(when)}</div>'
-        more = (f'<div style="font-size:12px;color:#94a3b8;margin-top:2px;">+ {row["count"] - 1} more waiting</div>'
-                if row["count"] > 1 else "")
+        bullets = ""
+        if row.get("episodes"):
+            for ep in row["episodes"]:
+                age = (now_utc - parse_utc(ep["pubdate"])).total_seconds() if ep.get("pubdate") else None
+                when = (f'{published_label(ep["pubdate"], tz)} · {ago_phrase(age)}' if ep.get("pubdate") else "")
+                bullets += (
+                    '<div style="font-size:12px;margin-top:4px;color:#475569;">'
+                    f'• {_link(ep.get("title") or "Untitled episode", ep.get("url"), "#1e293b")}'
+                    f'<span style="color:#94a3b8;"> · {html.escape(when)}</span></div>'
+                )
+        elif row.get("oldest_title") or row.get("oldest"):
+            when = (f'{published_label(row["oldest"], tz)} · {ago_phrase(row.get("age"))}' if row.get("oldest") else "")
+            title = (_link(row["oldest_title"], row.get("oldest_url"), "#1e293b") if row.get("oldest_title")
+                     else "oldest episode")
+            bullets = (f'<div style="font-size:12px;margin-top:4px;color:#475569;">• {title}'
+                       f'<span style="color:#94a3b8;"> · {html.escape(when)}</span></div>')
         items += (
             '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f1f5f9;">'
             f'<div style="flex:0 0 40px;">{art}</div>'
             '<div style="flex:1;min-width:0;">'
             f'<div style="font-size:13px;font-weight:700;">{_link(row["podcast"], row.get("podcast_url"), "#1e293b")}</div>'
-            f'{bullet}{more}</div>'
+            f'{bullets}</div>'
             '<div style="text-align:right;font-size:12px;color:#64748b;white-space:nowrap;">'
             f'{html.escape(episodes_phrase(row["count"]))}<br>{html.escape(dur_n(row["seconds"]))}</div></div>'
         )
@@ -1114,8 +1126,7 @@ def piling_up_html(s, d=None, tz=None):
     return (
         '<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
         'margin:24px 0 4px;">What&rsquo;s piling up</div>'
-        f'<div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">{len(rows)} shows, {total} episodes. '
-        'Each show lists its oldest unplayed episode, the longest-waiting first</div>'
+        f'<div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">{len(rows)} shows, {total} episodes</div>'
         + _white_card(items, 16)
     )
 

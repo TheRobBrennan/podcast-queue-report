@@ -267,9 +267,12 @@ class StoryTests(unittest.TestCase):
         s = {"by_show_snapshot": None}
         page = flow.piling_up_html(s, d)
         for needle in ("2 shows, 3 episodes", "Old Show", "Single Show", 'src="https://a/o.jpg"',
-                       'href="https://p/o"', "Tue, Oct 6", ">Old Ep</a>", "+ 1 more waiting", 'href="https://e/o"'):
+                       'href="https://p/o"', "Tue, Oct 6", ">Old Ep</a>", "Newer Ep", "Mon, Oct 12", 'href="https://e/o"'):
             self.assertIn(needle, page)
         self.assertLess(page.index("Old Show"), page.index("Single Show"))
+        self.assertLess(page.index("Old Ep"), page.index("Newer Ep"))   # every episode, oldest first
+        self.assertNotIn("more waiting", page)
+        self.assertNotIn("longest-waiting first", page)
 
     def test_ago_and_published_labels(self):
         self.assertEqual(flow.ago_phrase(30 * 60), "just now")
