@@ -277,7 +277,7 @@ def week_headline(w):
 
 def emoji_row_html():
     return "".join(
-        f'<span style="display:inline-block;margin:5px 10px;">{e}</span>'
+        f'<span style="display:inline-block;margin:0 2px;">{e}</span>'
         for e in ps.EMOJI_POOL
     )
 
@@ -409,7 +409,7 @@ def _page(title, body, headline=None, generated=None, tz=None, queue_html=""):
 <html><head><meta charset="utf-8"><title>{html.escape(title)}</title></head>
 <body style="margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
 <div style="max-width:720px;margin:0 auto;padding:32px 20px;">
-<div style="text-align:center;font-size:28px;line-height:1.3;margin-bottom:16px;">{emoji_row_html()}</div>
+<div style="text-align:center;font-size:25px;line-height:1.3;margin-bottom:16px;white-space:nowrap;">{emoji_row_html()}</div>
 {headline_html}
 <div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;">{html.escape(title)}</div>
 <div style="text-align:center;margin:10px 0 4px;">{pill}</div>

@@ -235,7 +235,7 @@ class GeneratedAndQueueTests(unittest.TestCase):
         self.assertIn("all caught up", page)
         self.assertEqual(page.count("<html"), 1)
         self.assertEqual(page.count("</body>"), 1)
-        self.assertEqual(page.count("margin-bottom:16px;\">"), 1)  # one emoji row only
+        self.assertEqual(page.count("display:inline-block;margin:0 2px;"), 21)  # one emoji row only
 
     def test_discord_day_embed(self):
         payload = flow.build_discord_day(self.s, self.generated, NY)
