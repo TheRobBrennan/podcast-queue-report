@@ -163,8 +163,11 @@ def summarize_day(history, day, tz=None):
     if not snaps:
         return out
     first, last = snaps[0], snaps[-1]
-    out["listened_seconds"] = sum(s["played_seconds"] for s in snaps)
-    out["listened_count"] = sum(s["played_count"] for s in snaps)
+    # The first reading's window reaches back before the day's first reading,
+    # so listening is counted from that reading on - the same "since" the
+    # queue card uses.
+    out["listened_seconds"] = sum(s["played_seconds"] for s in snaps[1:])
+    out["listened_count"] = sum(s["played_count"] for s in snaps[1:])
     out["queue_start"], out["queue_end"] = first, last
     out["queue_count_delta"] = last["queue_count"] - first["queue_count"]
     out["queue_seconds_delta"] = last["queue_seconds"] - first["queue_seconds"]
@@ -197,7 +200,7 @@ def summarize_day(history, day, tz=None):
     day_start = datetime.datetime.combine(
         day, datetime.time(DAY_STARTS_HOUR), tzinfo=zone
     ).astimezone(datetime.timezone.utc)
-    for s in snaps:
+    for s in snaps[1:]:
         if s["played_seconds"] == 0:
             if run_start is None:
                 run_start = s["since"]
@@ -214,7 +217,8 @@ def summarize_day(history, day, tz=None):
     for sn in snaps:
         windows.append({
             "snap": sn,
-            "played": sn["played_seconds"],
+            "first": prev is None,
+            "played": 0 if prev is None else sn["played_seconds"],
             "arrivals": arrivals_seconds(prev, sn) if prev else None,
             "queue_delta": (sn["queue_count"] - prev["queue_count"]) if prev else None,
         })
@@ -238,7 +242,7 @@ def day_context(history, day, tz=None):
     None when there is no data for it."""
     def listened(d):
         snaps = day_snapshots(history, d, tz)
-        return sum(s["played_seconds"] for s in snaps) if snaps else None
+        return sum(s["played_seconds"] for s in snaps[1:]) if snaps else None
     yesterday = listened(day - datetime.timedelta(days=1))
     prior = [x for x in (listened(day - datetime.timedelta(days=i)) for i in range(1, 8)) if x is not None]
     return yesterday, (sum(prior) / len(prior) if prior else None)
@@ -357,6 +361,8 @@ def label_name(snap):
 
 def window_sentence(w):
     sn = w["snap"]
+    if w.get("first"):
+        return f"First reading of the day · queue {sn['queue_count']}"
     bits = [f"Listened {dur_n(w['played'])}" if w["played"] > 0 else "Nothing played"]
     qd = w["queue_delta"]
     if qd is None:
@@ -581,13 +587,18 @@ def queue_tone(start_count, end_count):
     return "better" if end_count < start_count else ("worse" if end_count > start_count else "same")
 
 
+def since_label(snap, tz=None):
+    """"since 6:06am EDT" - the one starting point every card on the page uses."""
+    return f"since {clock(snap, tz)} {local_dt(snap, tz).strftime('%Z')}"
+
+
 def queue_card(qs, qe, tz=None):
     """The queue as its count in big keycap digits on green (shorter than when
     the day started), yellow (the same), or red (longer)."""
     tone = queue_tone(qs["queue_count"], qe["queue_count"])
     bg, fg, arrow = QUEUE_TONES[tone]
     delta = qe["queue_count"] - qs["queue_count"]
-    since = f"since {clock(qs, tz)} {local_dt(qs, tz).strftime('%Z')}"
+    since = since_label(qs, tz)
     n = abs(delta)
     noun = f"{n} episode" + ("" if n == 1 else "s")
     sub = {"better": f"{arrow} {noun} {since}",
@@ -754,10 +765,11 @@ def render_day_html(s, tz=None, generated=None, d=None):
         return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
     qs, qe = s["queue_start"], s["queue_end"]
     cards = [
-        _card("Listened", dur(s["listened_seconds"]), f"{s['listened_count']} episodes played"),
+        _card("Listened", dur(s["listened_seconds"]),
+              f"{s['listened_count']} episode{'' if s['listened_count'] == 1 else 's'} played {since_label(qs, tz)}"),
         queue_card(qs, qe, tz),
         _card("The oldest unplayed episode in your queue", f"{dur(qe['behind_seconds'])} old",
-              f"{behind_phrase(s['behind_delta'])} since {clock(qs, tz)}"),
+              f"{behind_phrase(s['behind_delta'])} {since_label(qs, tz)}"),
         _card("New arrivals", dur(s["arrivals_seconds"])),
     ]
     rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))

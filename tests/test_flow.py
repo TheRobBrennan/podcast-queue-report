@@ -129,7 +129,10 @@ class DayTests(unittest.TestCase):
     def test_drought_is_clipped_to_the_start_of_the_day(self):
         # the overnight window began at 10pm the evening before; only the
         # time after 4am counts toward this day's quietest stretch
-        history = [snap("2026-10-16T08:00", played_seconds=0, since_local_iso="2026-10-15T22:00")]
+        history = [
+            snap("2026-10-16T05:00", "morning", played_seconds=0),
+            snap("2026-10-16T08:00", played_seconds=0, since_local_iso="2026-10-15T22:00"),
+        ]
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
         self.assertEqual(s["drought"][0], 4 * 3600)
 
@@ -142,8 +145,11 @@ class DayTests(unittest.TestCase):
 class WeekTests(unittest.TestCase):
     def test_week_totals_and_best_day(self):
         history = [
+            snap("2026-10-12T08:00", "morning", 131, 345000, 905000, 0, 0),
             snap("2026-10-12T21:00", "evening", 130, 340000, 900000, 5, 20000),
+            snap("2026-10-13T08:00", "morning", 130, 340000, 900000, 0, 0),
             snap("2026-10-13T21:00", "evening", 128, 330000, 880000, 6, 30000),
+            snap("2026-10-14T08:00", "morning", 128, 330000, 880000, 0, 0),
             snap("2026-10-14T21:00", "evening", 125, 320000, 860000, 4, 10000),
         ]
         w = flow.summarize_week(history, datetime.date(2026, 10, 14), NY)
@@ -215,13 +221,14 @@ def minimal_run_json():
 class StoryTests(unittest.TestCase):
     def setUp(self):
         self.history = [
+            snap("2026-10-15T08:00", "morning", 119, 280000, 800000, 0, 0),
             snap("2026-10-15T09:00", "evening", 119, 280000, 800000, 2, 3000),
             snap("2026-10-16T09:00", "morning", 120, 300000, 900000, 0, 0),
             snap("2026-10-16T12:00", "manual", 118, 295000, 880000, 3, 7200),
             snap("2026-10-16T22:00", "evening", 119, 298000, 870000, 5, 10800),
         ]
-        self.history[1]["now_playing"] = {"title": "Pregame", "podcast": "Kraken Audio"}
-        self.history[2]["by_show"] = [{"podcast": "Kraken Audio", "count": 59, "seconds": 90000},
+        self.history[2]["now_playing"] = {"title": "Pregame", "podcast": "Kraken Audio"}
+        self.history[3]["by_show"] = [{"podcast": "Kraken Audio", "count": 59, "seconds": 90000},
                                       {"podcast": "RedHanded", "count": 30, "seconds": 40000}]
         self.s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
 
@@ -309,6 +316,23 @@ class StoryTests(unittest.TestCase):
         self.assertIn("No change since 9:00am EDT", card(121, 121))
         self.assertIn("#fee2e2", card(121, 124))
         self.assertIn("▲ 3 episodes since 9:00am EDT", card(121, 124))
+
+    def test_listening_counts_from_the_first_reading_of_the_day(self):
+        # the first reading's window reaches back before the day's first reading
+        history = [
+            snap("2026-10-16T09:00", "morning", 120, 300000, 900000, 4, 9999),
+            snap("2026-10-16T12:00", "manual", 118, 295000, 880000, 3, 7200),
+        ]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        self.assertEqual((s["listened_seconds"], s["listened_count"]), (7200, 3))
+        self.assertEqual(flow.window_sentence(s["windows"][0]), "First reading of the day · queue 120")
+        self.assertEqual(s["biggest_listen"]["snap"]["label"], "manual")
+
+    def test_every_card_says_since_the_same_time(self):
+        s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
+        page = flow.render_day_html(s, NY)
+        self.assertEqual(page.count("since 9:00am EDT"), 3)
+        self.assertIn("episodes played since 9:00am EDT", page)
 
     def test_labels_have_names_and_approximate_ones_are_marked(self):
         self.assertEqual(flow.label_name({"label": "dash-end"}), "🏁 Dash end")
