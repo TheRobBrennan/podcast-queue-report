@@ -387,9 +387,20 @@ class StoryTests(unittest.TestCase):
             snap("2026-10-16T22:30", "evening", 118, 292000, 870000, 1, 900),
         ]
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
-        self.assertEqual([p["name"] for p in s["by_part"]], ["afternoon", "morning", "late night"])
+        # the 10:00pm-ish window (20:30 to 22:30) is split 75/25 between evening and late night
+        self.assertEqual([p["name"] for p in s["by_part"]], ["afternoon", "morning", "evening", "late night"])
+        self.assertEqual({p["name"]: p["seconds"] for p in s["by_part"]},
+                         {"afternoon": 9000, "morning": 1800, "evening": 675, "late night": 225})
         text = " ".join(line for _, line in flow.highlights(s, NY))
-        self.assertIn("Your peak was afternoon: 2 hrs 30 mins of 3 hrs 15 mins (77%)", text)
+        self.assertIn("Your peak was afternoon (12pm to 5pm): 2 hrs 30 mins of 3 hrs 15 mins (77%)", text)
+
+    def test_a_window_that_straddles_noon_is_split_between_morning_and_afternoon(self):
+        history = [
+            snap("2026-10-16T08:00", "morning", played_seconds=0),
+            snap("2026-10-16T14:00", "manual", played_seconds=6000, since_local_iso="2026-10-16T10:00"),
+        ]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        self.assertEqual({p["name"]: p["seconds"] for p in s["by_part"]}, {"morning": 3000, "afternoon": 3000})
 
     def test_pace_line(self):
         history = [

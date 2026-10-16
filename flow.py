@@ -249,32 +249,47 @@ def summarize_day(history, day, tz=None):
 
 
 PARTS = (
-    (4, 12, "🌅", "morning"),
-    (12, 17, "🌤️", "afternoon"),
-    (17, 22, "🌆", "evening"),
-    (22, 28, "🌙", "late night"),
+    (4, 12, "🌅", "morning", "4am to 12pm"),
+    (12, 17, "🌤️", "afternoon", "12pm to 5pm"),
+    (17, 22, "🌆", "evening", "5pm to 10pm"),
+    (22, 28, "🌙", "late night", "10pm to 4am"),
 )
 
 
 def part_of(dt_local):
     h = dt_local.hour if dt_local.hour >= DAY_STARTS_HOUR else dt_local.hour + 24
-    for lo, hi, icon, name in PARTS:
+    for lo, hi, icon, name, rng in PARTS:
         if lo <= h < hi:
             return icon, name
     return PARTS[-1][2], PARTS[-1][3]
 
 
 def listening_by_part(windows, tz=None):
-    """Seconds listened per part of the day, each window credited to the part
-    of the day its reading was taken in."""
+    """Seconds listened per part of the day. Each reading's listening is spread
+    evenly across the window it covers (since the previous reading), so a
+    window that straddles noon is split between morning and afternoon."""
+    zone = tz or ps.LOCAL_TZ
     totals = {}
     for w in windows:
         if w.get("first") or w["played"] <= 0:
             continue
-        icon, name = part_of(local_dt(w["snap"], tz))
-        row = totals.setdefault(name, {"icon": icon, "name": name, "seconds": 0})
-        row["seconds"] += w["played"]
-    return sorted(totals.values(), key=lambda r: -r["seconds"])
+        start = parse_utc(w["snap"]["since"]).astimezone(zone)
+        end = parse_utc(w["snap"]["ts"]).astimezone(zone)
+        span = (end - start).total_seconds()
+        if span <= 0:
+            continue
+        day0 = datetime.datetime.combine(
+            day_of(end), datetime.time(DAY_STARTS_HOUR), tzinfo=zone
+        )
+        for lo, hi, icon, name, rng in PARTS:
+            p_start = day0 + datetime.timedelta(hours=lo - DAY_STARTS_HOUR)
+            p_end = day0 + datetime.timedelta(hours=hi - DAY_STARTS_HOUR)
+            overlap = (min(end, p_end) - max(start, p_start)).total_seconds()
+            if overlap > 0:
+                row = totals.setdefault(name, {"icon": icon, "name": name, "range": rng, "seconds": 0})
+                row["seconds"] += w["played"] * overlap / span
+    rows = [dict(r, seconds=int(round(r["seconds"]))) for r in totals.values()]
+    return sorted(rows, key=lambda r: -r["seconds"])
 
 
 def day_context(history, day, tz=None):
@@ -477,7 +492,7 @@ def highlights(s, tz=None):
         top = parts[0]
         pct = 100.0 * top["seconds"] / s["listened_seconds"]
         if pct >= 40:
-            out.append((top["icon"], f"Your peak was {top['name']}: {dur_n(top['seconds'])} of "
+            out.append((top["icon"], f"Your peak was {top['name']} ({top['range']}): {dur_n(top['seconds'])} of "
                                      f"{dur_n(s['listened_seconds'])} ({pct:.0f}%)"))
     pace = pace_line(s)
     if pace:
