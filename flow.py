@@ -157,6 +157,12 @@ def arrivals_seconds(prev, cur):
     return max(0, (cur["queue_seconds"] - prev["queue_seconds"]) + cur["played_seconds"])
 
 
+def arrivals_count(prev, cur):
+    """Estimated episodes that landed between two snapshots: the change in
+    queue size plus the episodes played out of it."""
+    return max(0, (cur["queue_count"] - prev["queue_count"]) + cur["played_count"])
+
+
 def summarize_day(history, day, tz=None):
     snaps = day_snapshots(history, day, tz)
     out = {"day": day, "snapshots": snaps, "dashes": []}
@@ -175,6 +181,7 @@ def summarize_day(history, day, tz=None):
     out["arrivals_seconds"] = sum(
         arrivals_seconds(a, b) for a, b in zip(snaps, snaps[1:])
     )
+    out["arrivals_count"] = sum(arrivals_count(a, b) for a, b in zip(snaps, snaps[1:]))
 
     # Dash windows: each dash-start paired with the next dash-end.
     open_start = None
@@ -553,12 +560,12 @@ def render_week_chat(w, tz=None):
     return "\n".join(lines)
 
 
+CARD_VALUE_SIZE = 20
+
+
 def fit_value(text):
-    """A card's big number on one line: shrink the type for long values
-    rather than letting them wrap."""
-    n = len(text)
-    size = 22 if n <= 25 else 19 if n <= 31 else 17 if n <= 36 else 15
-    return (f'<span style="font-size:{size}px;white-space:nowrap;">{html.escape(text)}</span>')
+    """A card's big number: one size on every card, never wrapping."""
+    return (f'<span style="font-size:{CARD_VALUE_SIZE}px;white-space:nowrap;">{html.escape(text)}</span>')
 
 
 def _card(label, value, sub="", hint="", value_html=None, sub_html=None):
@@ -601,6 +608,23 @@ def queue_tone(start_count, end_count):
 def since_label(snap, tz=None):
     """"since 6:06am EDT" - the one starting point every card on the page uses."""
     return f"since {clock(snap, tz)} {local_dt(snap, tz).strftime('%Z')}"
+
+
+def arrivals_tone(arrived, listened):
+    """Green when you listened to more than arrived, yellow within 10% of it,
+    red when more arrived than you listened to."""
+    if arrived > listened * 1.1:
+        return "worse"
+    if arrived < listened * 0.9:
+        return "better"
+    return "same"
+
+
+def arrivals_line(count, arrived_seconds, listened_seconds, since):
+    tone = arrivals_tone(arrived_seconds, listened_seconds)
+    _, fg, _ = QUEUE_TONES[tone]
+    noun = f"{count} episode" + ("" if count == 1 else "s")
+    return f'<span style="color:{fg};font-weight:600;">\u25b2 {html.escape(noun)} {html.escape(since)}</span>'
 
 
 def age_line(delta, since):
@@ -791,9 +815,11 @@ def render_day_html(s, tz=None, generated=None, d=None):
         _card("Listened", dur(s["listened_seconds"]),
               f"{s['listened_count']} episode{'' if s['listened_count'] == 1 else 's'} played {since_label(qs, tz)}"),
         queue_card(qs, qe, tz),
-        _card("The oldest unplayed episode in your queue", f"{dur_n(qe['behind_seconds'], 4)} old",
+        _card("The oldest unplayed episode in your queue", dur_n(qe['behind_seconds'], 4),
               sub_html=age_line(s["behind_delta"], since_label(qs, tz))),
-        _card("New arrivals", dur(s["arrivals_seconds"])),
+        _card("New arrivals", dur(s["arrivals_seconds"]),
+              sub_html=arrivals_line(s["arrivals_count"], s["arrivals_seconds"], s["listened_seconds"],
+                                     since_label(qs, tz))),
     ]
     rows = "".join(f"<tr>{cards[i]}{cards[i + 1]}</tr>" for i in range(0, len(cards), 2))
     parts = [f'<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px;">{rows}</table>']

@@ -331,7 +331,7 @@ class StoryTests(unittest.TestCase):
     def test_every_card_says_since_the_same_time(self):
         s = flow.summarize_day(self.history, datetime.date(2026, 10, 16), NY)
         page = flow.render_day_html(s, NY)
-        self.assertEqual(page.count("since 9:00am EDT"), 3)
+        self.assertEqual(page.count("since 9:00am EDT"), 4)  # listened, queue, oldest, arrivals
         self.assertIn("episodes played since 9:00am EDT", page)
 
     def test_oldest_episode_line_is_green_yellow_or_red_like_the_queue(self):
@@ -345,12 +345,27 @@ class StoryTests(unittest.TestCase):
         self.assertIn("#b91c1c", worse)
         self.assertIn("▲ Slipped 2 hrs", worse)
 
-    def test_long_card_values_shrink_instead_of_wrapping(self):
-        short = flow.fit_value("6 hrs 21 mins")
-        long = flow.fit_value("1 week 2 days 10 hrs 48 mins old")
-        self.assertIn("font-size:22px", short)
-        self.assertIn("white-space:nowrap", long)
-        self.assertNotIn("font-size:22px", long)
+    def test_every_card_value_is_the_same_size_and_never_wraps(self):
+        for text in ("6 hrs 21 mins", "1 week 2 days 10 hrs 48 mins"):
+            v = flow.fit_value(text)
+            self.assertIn(f"font-size:{flow.CARD_VALUE_SIZE}px", v)
+            self.assertIn("white-space:nowrap", v)
+
+    def test_arrivals_count_is_queue_change_plus_played(self):
+        a = snap("2026-10-16T09:00", queue_count=120)
+        b = snap("2026-10-16T11:00", queue_count=118, played_count=3)
+        self.assertEqual(flow.arrivals_count(a, b), 1)
+        c = snap("2026-10-16T13:00", queue_count=100, played_count=1)
+        self.assertEqual(flow.arrivals_count(b, c), 0)
+
+    def test_arrivals_line_is_green_yellow_or_red(self):
+        since = "since 9:00am EDT"
+        self.assertIn("#15803d", flow.arrivals_line(2, 3000, 10000, since))   # listened more than arrived
+        self.assertIn("#a16207", flow.arrivals_line(5, 10200, 10000, since))  # about even
+        red = flow.arrivals_line(9, 20000, 10000, since)
+        self.assertIn("#b91c1c", red)
+        self.assertIn("▲ 9 episodes since 9:00am EDT", red)
+        self.assertIn("▲ 1 episode since", flow.arrivals_line(1, 100, 10000, since))
 
     def test_labels_have_names_and_approximate_ones_are_marked(self):
         self.assertEqual(flow.label_name({"label": "dash-end"}), "🏁 Dash end")
