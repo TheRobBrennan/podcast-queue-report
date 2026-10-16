@@ -629,7 +629,7 @@ class WindowStoryTests(unittest.TestCase):
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
         page = flow.render_day_html(s, NY)
         self.assertEqual(page.count("Same Episode"), 1)
-        self.assertEqual(page.count("Different Episode"), 1)
+        self.assertEqual(page.count("▶ Playing"), 2)  # one row per change: Same, then Different
 
     def test_window_label_adds_am_pm_only_when_the_window_crosses_noon(self):
         a = snap("2026-10-16T14:00", since_local_iso="2026-10-16T12:00")
