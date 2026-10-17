@@ -1216,8 +1216,8 @@ def now_playing_card_html(np, up_next=None, more=""):
             link = up_next.get("episode_url") or up_next.get("podcast_url")
             small = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
         nxt = (
-            '<div style="display:flex;gap:12px;align-items:center;margin-top:12px;padding-top:12px;'
-            'border-top:1px solid #bbf7d0;">'
+            '<div style="display:flex;gap:12px;align-items:center;margin-top:14px;padding:10px 12px;'
+            'background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;">'
             f'<div style="flex:0 0 40px;">{small}</div>'
             '<div style="flex:1;min-width:0;font-size:12px;color:#475569;">'
             '<span style="display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;'
@@ -1228,7 +1228,8 @@ def now_playing_card_html(np, up_next=None, more=""):
             + '</div></div></div>'
         )
     return (
-        '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">'
+        '<div style="background:#ffffff;border:1px solid #e2e8f0;border-left:5px solid #16a34a;border-radius:12px;'
+        'box-shadow:0 2px 8px rgba(15,23,42,0.08);padding:16px 20px;margin-bottom:20px;">'
         '<div style="display:flex;gap:16px;align-items:flex-start;">'
         f'<div style="flex:0 0 64px;">{art}</div>'
         '<div style="flex:1;min-width:0;">'
