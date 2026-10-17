@@ -331,6 +331,39 @@ class StoryTests(unittest.TestCase):
         self.assertIn("You've finished 1 hr 30 mins less than yesterday at this time", lines)
         self.assertIn("You're 1 hr below your usual at this time", lines)
 
+    def test_listening_section_has_playing_up_next_and_the_other_started_episodes(self):
+        np = {"title": "Playing", "podcast": "A", "episode_url": "https://e/1"}
+        nxt = {"title": "Next", "podcast": "B", "episode_url": "https://e/2"}
+        started = [{"title": "Playing", "podcast": "A", "episode_url": "https://e/1", "pct": 51, "left": "1 hr"},
+                   {"title": "Next", "podcast": "B", "episode_url": "https://e/2", "pct": 5, "left": "1 hr"},
+                   {"title": "Half Done", "podcast": "C", "pct": 50, "left": "30 mins"}]
+        page = flow.listening_html(np, nxt, started)
+        order = [page.index(x) for x in ("NOW PLAYING", "UP NEXT", "Also in progress", "Half Done")]
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(page.count("Playing"), 1)      # the playing episode is not repeated below
+        self.assertEqual(page.count(">Next<"), 1)
+        self.assertNotIn("Episodes in progress", page)
+
+    def test_listening_section_without_anything_playing_is_just_the_started_episodes(self):
+        started = [{"title": "Half Done", "podcast": "C", "pct": 50, "left": "30 mins"}]
+        self.assertIn("Episodes in progress", flow.listening_html(None, None, started))
+        self.assertEqual(flow.listening_html(None, None, []), "")
+
+    def test_morning_recap_pictures_add_the_shape_of_the_day(self):
+        history = [snap("2026-10-16T06:00", "morning", 124), snap("2026-10-16T22:00", "evening", 121)]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        today = flow.render_day_top_pages(s, NY, flow.utcnow())
+        recap = flow.render_day_top_pages(dict(s, when="yesterday"), NY, flow.utcnow())
+        self.assertEqual(len(recap), len(today) + 1)
+
+    def test_morning_recap_is_yesterdays_flow_worded_as_yesterday(self):
+        history = [snap("2026-10-16T06:00", "morning", 124), snap("2026-10-16T22:00", "evening", 121)]
+        recap = flow.morning_recap(history, datetime.date(2026, 10, 17), NY)
+        self.assertEqual(recap["day"], datetime.date(2026, 10, 16))
+        self.assertIn("podcasts yesterday", flow.day_headline(recap))
+        self.assertIn("podcasts today", flow.day_headline(dict(recap, when="today")))
+        self.assertIsNone(flow.morning_recap(history, datetime.date(2026, 10, 20), NY))
+
     def test_now_playing_card_has_artwork_links_progress_and_up_next(self):
         np = {"title": "The Nightmare Cure", "podcast": "MrBallen", "episode_url": "https://e/1",
               "podcast_url": "https://p/1", "artwork_url": "https://a/1.jpg",
@@ -556,9 +589,19 @@ class GeneratedAndQueueTests(unittest.TestCase):
                                      "duration_fmt": "1 hr", "remaining_fmt": "30 mins"}]}}
         payload = flow.build_discord_day(self.s, self.generated, NY, d)
         fields = {f["name"]: f["value"] for f in payload["embeds"][0]["fields"]}
-        prog = next(v for n, v in fields.items() if "Episodes in progress" in n)
+        prog = next(v for n, v in fields.items() if "Listening" in n)
         self.assertIn("\u25b0\u25b0\u25b0\u25b0\u25b0\u25b1\u25b1\u25b1\u25b1\u25b1 50%", prog)
         self.assertIn("30 mins left", prog)
+
+    def test_discord_listening_field_combines_playing_up_next_and_others(self):
+        s = dict(self.s, now_playing={"title": "Playing", "podcast": "A"},
+                 up_next={"title": "Next", "podcast": "B"},
+                 in_progress_snapshot={"in_progress": [{"title": "Half Done", "podcast": "C", "pct": 50, "left": "30 mins"}]})
+        fields = {f["name"]: f["value"] for f in flow.build_discord_day(s, self.generated, NY)["embeds"][0]["fields"]}
+        listening = next(v for n, v in fields.items() if "Listening" in n)
+        for needle in ("Now playing:** Playing", "Up next:** Next", "Half Done"):
+            self.assertIn(needle, listening)
+        self.assertFalse([n for n in fields if "Now playing" in n or "Episodes in progress" in n])
 
     def test_discord_day_embed(self):
         payload = flow.build_discord_day(self.s, self.generated, NY)
@@ -764,7 +807,7 @@ class ChartAndProgressTests(unittest.TestCase):
         history[-1]["now_playing"] = {"title": "Playing Now", "podcast": "Show"}
         s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
         page = flow.render_day_html(s, NY)
-        order = [page.index(x) for x in ("The queue over your day", "NOW PLAYING", "Episodes in progress",
+        order = [page.index(x) for x in ("The queue over your day", "NOW PLAYING", "Also in progress",
                                           "Episodes in your queue")]
         self.assertEqual(order, sorted(order))
 

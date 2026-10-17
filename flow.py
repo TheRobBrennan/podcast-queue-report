@@ -585,7 +585,8 @@ def mood(delta):
 
 
 def day_headline(s):
-    return " ".join(f"That papa got through {dur(s['listened_seconds'])} of podcasts today {mood(s['behind_delta'])}".split()) + " 🎧"
+    when = s.get("when", "today")
+    return " ".join(f"That papa got through {dur(s['listened_seconds'])} of podcasts {when} {mood(s['behind_delta'])}".split()) + " 🎧"
 
 
 def week_headline(w):
@@ -1186,7 +1187,7 @@ def _link(text, url, color="inherit", weight=None):
     return f'<a href="{html.escape(url)}" target="_blank" style="{style}">{inner}</a>'
 
 
-def now_playing_card_html(np, up_next=None):
+def now_playing_card_html(np, up_next=None, more=""):
     """The episode playing right now: artwork, linked title and show, how far
     through it you are, and what is next."""
     if not np:
@@ -1235,7 +1236,7 @@ def now_playing_card_html(np, up_next=None):
         f'<div style="font-size:15px;font-weight:700;margin-top:6px;color:#065f46;">'
         f'{_link(np.get("title"), np.get("episode_url"), "#065f46")}</div>'
         f'<div style="font-size:13px;margin-top:2px;color:#047857;">{_link(np.get("podcast"), np.get("podcast_url"), "#047857")}</div>'
-        f'{progress}</div></div>{nxt}</div>'
+        f'{progress}</div></div>{nxt}{more}</div>'
     )
 
 
@@ -1324,11 +1325,9 @@ def queue_chart_svg(s, tz=None, width=680, height=190):
     )
 
 
-def in_progress_html(items, tz=None):
-    """The episodes you have started: artwork, a linked title and show, and how
-    far through each one is."""
-    if not items:
-        return ""
+def _progress_rows(items, tz=None):
+    """One row per started episode: artwork, a linked title and show, and how
+    far through it is."""
     rows = ""
     now_utc = utcnow()
     for it in items:
@@ -1355,11 +1354,43 @@ def in_progress_html(items, tz=None):
             f'<div style="flex:0 0 auto;text-align:right;font-size:12px;color:#64748b;white-space:nowrap;">'
             f'<div style="font-size:16px;font-weight:800;color:#15803d;">{it["pct"]}%</div>{html.escape(str(it.get("left") or ""))} left</div></div>'
         )
-    return (
-        '<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
-        'margin:8px 0 10px;">Episodes in progress</div>'
-        + _white_card(rows, 20)
-    )
+    return rows
+
+
+def _section_title(text):
+    return ('<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
+            f'margin:8px 0 10px;">{html.escape(text)}</div>')
+
+
+def in_progress_html(items, tz=None):
+    """The episodes you have started, as a card of their own."""
+    if not items:
+        return ""
+    return _section_title("Episodes in progress") + _white_card(_progress_rows(items, tz), 20)
+
+
+def _same_episode(a, b):
+    if not a or not b:
+        return False
+    if a.get("episode_url") and a.get("episode_url") == b.get("episode_url"):
+        return True
+    return bool(a.get("title")) and (a.get("title"), a.get("podcast")) == (b.get("title"), b.get("podcast"))
+
+
+def listening_html(np, up_next, started, tz=None):
+    """One section for everything you are listening to: the episode playing
+    now, what is up next, and any other episodes you have started (the playing
+    and up-next ones are not repeated)."""
+    others = [e for e in started if not _same_episode(e, np) and not _same_episode(e, up_next)]
+    if not np:
+        return in_progress_html(others, tz)
+    more = ""
+    if others:
+        more = ('<div style="margin-top:14px;padding-top:12px;border-top:1px solid #a7f3d0;">'
+                '<div style="font-size:10px;font-weight:700;letter-spacing:0.5px;color:#047857;'
+                'text-transform:uppercase;margin-bottom:2px;">Also in progress</div>'
+                + _progress_rows(others, tz) + '</div>')
+    return _section_title("Listening") + now_playing_card_html(np, up_next, more)
 
 
 def _day_top_parts(s, tz=None, d=None):
@@ -1373,7 +1404,7 @@ def _day_top_parts(s, tz=None, d=None):
         np = d["now_playing"]
         nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
     chart = queue_chart_svg(s, tz).replace("margin:8px 0 4px;", "margin:20px 0 4px;", 1)
-    playing = now_playing_card_html(np, nxt) + in_progress_html(started, tz)
+    playing = listening_html(np, nxt, started, tz)
     stats = card_grid(cards)
     hl = highlights(s, tz)
     if hl:
@@ -1386,9 +1417,13 @@ def render_day_top_pages(s, tz=None, generated=None, d=None):
     """The top of the report as separate pages, one per picture for Discord."""
     title = f"Daily Flow — {pretty_day_full(s['day'])}"
     chart, playing, stats = _day_top_parts(s, tz, d)
-    return [_page(title, chart, day_headline(s), generated, tz, footer=False),
-            _page(title, playing, None, generated, tz, header=False, footer=False),
-            _page(title, stats, None, generated, tz, header=False, footer=False)]
+    pages = [_page(title, chart, day_headline(s), generated, tz, footer=False),
+             _page(title, playing, None, generated, tz, header=False, footer=False),
+             _page(title, stats, None, generated, tz, header=False, footer=False)]
+    if s.get("when") == "yesterday":
+        # the morning look back also shows how the day unfolded, window by window
+        pages.append(_page(title, timeline_html(s, tz), None, generated, tz, header=False, footer=False))
+    return pages
 
 
 def render_day_html(s, tz=None, generated=None, d=None):
@@ -1498,8 +1533,20 @@ def build_discord_day(s, generated=None, tz=None, d=None):
     if spark:
         fields.append(_field("__\U0001f4c8 The queue over your day__", spark, inline=False))
     started = in_progress_episodes(d) if d else ((s.get("in_progress_snapshot") or {}).get("in_progress") or [])
-    if started:
-        fields.append(_field("__\u23f8 Episodes in progress__", in_progress_lines(started)[:1000], inline=False))
+    np, nxt = s.get("now_playing"), s.get("up_next")
+    if d and d.get("now_playing"):
+        np = d["now_playing"]
+        nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
+    others = [e for e in started if not _same_episode(e, np) and not _same_episode(e, nxt)]
+    listening = []
+    if np:
+        listening.append(f"\u25b6 **Now playing:** {np['title']} \u2014 {np['podcast']}")
+    if nxt and nxt.get("title"):
+        listening.append(f"\u23ed **Up next:** {nxt['title']} \u2014 {nxt.get('podcast') or ''}")
+    if others:
+        listening.append(in_progress_lines(others))
+    if listening:
+        fields.append(_field("__\U0001f3a7 Listening__", "\n".join(listening)[:1000], inline=False))
     fields += [
         _field("__\U0001f3a7 Finished__",
                f"{s['listened_count']} episodes\n{rr.wrap_duration(dur(s['listened_seconds']))}"),
@@ -1531,9 +1578,6 @@ def build_discord_day(s, generated=None, tz=None, d=None):
             piling += f"\n\u2026 and {len(rows) - 8} more"
         fields.append(_field(f"__\U0001f4da What's piling up ({len(rows)} shows, longest-waiting first)__",
                              piling[:1000], inline=False))
-    if s.get("now_playing"):
-        np = s["now_playing"]
-        fields.append(_field("__\u25b6 Now playing__", f"{np['title']} \u2014 {np['podcast']}"[:300], inline=False))
     return _flow_embed(f"Daily Flow \u2014 {pretty_day(s['day'])}", day_headline(s), fields,
                        generated, rr.grade_int(qe.get("grade") or "D"), tz)
 
@@ -1713,6 +1757,13 @@ def email_day(s, page_html, label):
     return _send(email_payload(subject, page_html), "send_email.py")
 
 
+def morning_recap(history, day, tz=None):
+    """The first report of the day looks back: yesterday's flow, whole. None
+    when there is nothing recorded for yesterday."""
+    recap = summarize_day(history, day - datetime.timedelta(days=1), tz)
+    return dict(recap, when="yesterday") if recap["snapshots"] else None
+
+
 def take_snapshot(label, quiet=False, open_report=False, history_path=None):
     d = run_query()
     snap = snapshot_from_run(d, label)
@@ -1728,11 +1779,14 @@ def take_snapshot(label, quiet=False, open_report=False, history_path=None):
     print(f"\U0001f310 Web report: {paths['day']}")
     if open_report:
         subprocess.run(["open", paths["day"]])
+    recap = morning_recap(history, day) if label == "morning" else None
     if not quiet and label != "pulse":
-        _send(json.dumps(discord_day_payload(s, generated, d)), "post_discord.py")
+        _send(json.dumps(discord_day_payload(recap or s, generated, d)), "post_discord.py")
         if label == "evening" and day.weekday() == 6:
             w = summarize_week(history, day)
             _send(json.dumps(build_discord_week(w, generated)), "post_discord.py")
+    if recap and _flow_email_enabled():
+        email_day(recap, render_day_html(recap, None, generated, d), f"{cfg_label} (yesterday)")
     if label == "evening" and _flow_email_enabled():
         email_day(s, render_day_html(s, None, generated, d), cfg_label)
         if "week" in paths:
