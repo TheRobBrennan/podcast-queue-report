@@ -65,7 +65,6 @@ MIN_GAP_MINUTES = 20
 PULSE_EVERY_MINUTES = 55       # a quiet reading about every hour while the Mac is awake
 PULSE_FIRST_HOUR, PULSE_LAST_HOUR = 6, 23
 REPORTS_DIR = os.path.join(SCRIPT_DIR, "reports")
-DISCORD_FLOW_LABELS = ("dash-end", "evening")
 
 
 # --- history ---------------------------------------------------------------
@@ -1730,9 +1729,7 @@ def take_snapshot(label, quiet=False, open_report=False, history_path=None):
     if open_report:
         subprocess.run(["open", paths["day"]])
     if not quiet and label != "pulse":
-        _pipe(["discord"], "post_discord.py")
-        if label in DISCORD_FLOW_LABELS:
-            _send(json.dumps(discord_day_payload(s, generated, d)), "post_discord.py")
+        _send(json.dumps(discord_day_payload(s, generated, d)), "post_discord.py")
         if label == "evening" and day.weekday() == 6:
             w = summarize_week(history, day)
             _send(json.dumps(build_discord_week(w, generated)), "post_discord.py")
