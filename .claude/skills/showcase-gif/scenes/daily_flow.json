@@ -1,0 +1,122 @@
+[
+ {
+  "rect": [
+   70,
+   0,
+   830,
+   215
+  ],
+  "pill": "OVERVIEW",
+  "color": "gray",
+  "title": "Your Daily Flow report",
+  "lines": [
+   "One page that tells the story of your listening day:",
+   "what you finished, what arrived, and how the queue moved."
+  ]
+ },
+ {
+  "rect": [
+   90,
+   225,
+   810,
+   485
+  ],
+  "pill": "QUEUE",
+  "color": "gray",
+  "title": "The queue over your day",
+  "lines": [
+   "Every hourly check-in plotted: 116 episodes at 6:06am,",
+   "117 now. The headline number and delta sit on top."
+  ]
+ },
+ {
+  "rect": [
+   90,
+   495,
+   810,
+   765
+  ],
+  "pill": "NEW",
+  "color": "green",
+  "title": "One Listening section",
+  "lines": [
+   "Now Playing and Up Next live together in a single card:",
+   "white with a green accent, and an indigo Up Next panel."
+  ]
+ },
+ {
+  "rect": [
+   90,
+   770,
+   810,
+   918
+  ],
+  "pill": "STATS",
+  "color": "gray",
+  "title": "Today at a glance",
+  "lines": [
+   "2 episodes finished (1 hr 28 mins), 117 in the queue,",
+   "and 3 new episodes that added 3 hrs 11 mins of audio."
+  ]
+ },
+ {
+  "rect": [
+   90,
+   924,
+   810,
+   1175
+  ],
+  "pill": "INSIGHTS",
+  "color": "indigo",
+  "title": "Plain-English takeaways",
+  "lines": [
+   "Biggest stretch, arrival burst, peak time of day, nap time,",
+   "plus how you compare with yesterday and your usual."
+  ]
+ },
+ {
+  "rect": [
+   90,
+   1185,
+   810,
+   1650
+  ],
+  "pill": "TIMELINE",
+  "color": "gray",
+  "title": "The shape of your day",
+  "lines": [
+   "Hour-by-hour check-ins: queue up, down or flat,",
+   "with green bars showing when you actually listened."
+  ]
+ },
+ {
+  "rect": [
+   90,
+   1650,
+   810,
+   1855
+  ],
+  "pill": "NEW",
+  "color": "green",
+  "title": "What was playing, right in the timeline",
+  "lines": [
+   "The episode you were on appears inline in the hour it",
+   "happened, with progress between check-ins (11% to 51% to 61%)."
+  ]
+ },
+ {
+  "rect": [
+   90,
+   2040,
+   810,
+   2480
+  ],
+  "pill": "BACKLOG",
+  "color": "gray",
+  "title": "What's piling up",
+  "lines": [
+   "The unplayed queue grouped by podcast, with episode",
+   "counts and total time, newest first."
+  ]
+ }
+]
