@@ -1029,8 +1029,9 @@ def _media_row(side, side_w, body, gap=12, valign="top", outer="", right=""):
              f'<td style="{td}">{body}</td>')
     if right:
         cells += f'<td style="{td}text-align:right;white-space:nowrap;padding-left:{gap}px;">{right}</td>'
-    return (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
-            f'style="border-collapse:collapse;{outer}"><tr>{cells}</tr></table>')
+    # padding/border/margin go on a wrapping div: Outlook ignores them on a table
+    return (f'<div style="{outer}"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            f'border="0" style="border-collapse:collapse;"><tr>{cells}</tr></table></div>')
 
 
 def _white_card(inner, margin=16, extra=""):
@@ -1248,7 +1249,92 @@ def now_playing_card_html(np, up_next=None, more=""):
 
 
 def queue_chart_svg(s, tz=None, width=680, height=190):
-    """The queue's size at each reading across the day, as a bar per reading.
+    """The queue's size at each reading across the day: a line with a tinted
+    area, a dot per reading, the Dash shaded, the start and the latest labeled."""
+    snaps = s["snapshots"]
+    if len(snaps) < 2:
+        return ""
+    zone = tz or ps.LOCAL_TZ
+    left, right, top, bottom = 38, 14, 16, 30
+    w, h = width - left - right, height - top - bottom
+    times = [parse_utc(x["ts"]).timestamp() for x in snaps]
+    t0, t1 = times[0], times[-1]
+    span = (t1 - t0) or 1
+    counts = [x["queue_count"] for x in snaps]
+    vmax, vmin = max(counts) + 1, min(counts) - 1
+
+    def X(ts):
+        return left + (ts - t0) / span * w
+
+    def Y(v):
+        return top + (vmax - v) / ((vmax - vmin) or 1) * h
+
+    tone = queue_tone(counts[0], counts[-1])
+    area_bg, line, _ = QUEUE_TONES[tone]
+    line = {"better": "#16a34a", "same": "#ca8a04", "worse": "#dc2626"}[tone]
+    parts = [f'<svg viewBox="0 0 {width} {height}" width="100%" role="img" '
+             f'aria-label="The queue over the day" style="display:block;font-family:inherit;">']
+    for v in sorted({vmax, vmin, round((vmax + vmin) / 2)}):
+        parts.append(f'<line x1="{left}" y1="{Y(v):.1f}" x2="{left + w}" y2="{Y(v):.1f}" stroke="#e2e8f0" stroke-width="1"/>'
+                     f'<text x="{left - 6}" y="{Y(v) + 4:.1f}" font-size="11" fill="#94a3b8" text-anchor="end">{v}</text>')
+    # Dash windows
+    for dsh in s["dashes"]:
+        x1, x2 = X(parse_utc(dsh["start"]["ts"]).timestamp()), X(parse_utc(dsh["end"]["ts"]).timestamp())
+        parts.append(f'<rect x="{x1:.1f}" y="{top}" width="{max(x2 - x1, 2):.1f}" height="{h}" fill="#e0f2fe" opacity="0.9"/>'
+                     f'<text x="{(x1 + x2) / 2:.1f}" y="{top + 12}" font-size="11" fill="#0369a1" text-anchor="middle">🚐 Dash</text>')
+    pts = [(X(ts), Y(c)) for ts, c in zip(times, counts)]
+    path = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    base = top + h
+    parts.append(f'<polygon points="{pts[0][0]:.1f},{base} {path} {pts[-1][0]:.1f},{base}" fill="{area_bg}" opacity="0.85"/>')
+    parts.append(f'<polyline points="{path}" fill="none" stroke="{line}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>')
+    last_dot_x = last_label_x = None
+    for i, ((x, y), c) in enumerate(zip(pts, counts)):
+        if last_dot_x is None or x - last_dot_x >= 7 or i == len(pts) - 1:
+            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#fff" stroke="{line}" stroke-width="2"/>')
+            last_dot_x = x
+        important = i == 0 or c in (min(counts), max(counts))
+        if (important or i == len(pts) - 1 or len(pts) <= 12) and (last_label_x is None or x - last_label_x >= 30):
+            parts.append(f'<text x="{x:.1f}" y="{y - 9:.1f}" font-size="11" font-weight="700" fill="#334155" '
+                         f'text-anchor="middle">{c}</text>')
+            last_label_x = x
+    # time axis: an hourly tick when the day is long enough, never two labels on top of each other
+    first_local = datetime.datetime.fromtimestamp(t0, zone)
+    last_local = datetime.datetime.fromtimestamp(t1, zone)
+    hour = first_local.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
+    step = 1 if span <= 8 * 3600 else 2 if span <= 16 * 3600 else 3
+    marks = [first_local]
+    while hour.timestamp() < t1:
+        marks.append(hour)
+        hour += datetime.timedelta(hours=step)
+    marks.append(last_local)
+    kept = []
+    for tk in marks:
+        x = X(tk.timestamp())
+        if kept and x - kept[-1][0] < 44:
+            if tk is last_local and len(kept) > 1:
+                kept.pop()          # the latest time wins over a tick right beside it
+            else:
+                continue
+        kept.append((x, tk))
+    for x, tk in kept:
+        label = tk.strftime("%-I%p").lower() if tk.minute == 0 else tk.strftime("%-I:%M%p").lower()
+        parts.append(f'<text x="{x:.1f}" y="{height - 8}" font-size="11" fill="#94a3b8" text-anchor="middle">{label}</text>')
+    parts.append("</svg>")
+    delta = counts[-1] - counts[0]
+    sub = (f"{counts[-1]} episodes now, down {abs(delta)} from {counts[0]}" if delta < 0 else
+           f"{counts[-1]} episodes now, up {delta} from {counts[0]}" if delta > 0 else
+           f"{counts[-1]} episodes now, the same as at the start")
+    sub_color = {"better": "#15803d", "same": "#a16207", "worse": "#b91c1c"}[tone]
+    return (
+        '<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
+        'margin:8px 0 4px;">The queue over your day</div>'
+        f'<div style="font-size:12px;font-weight:600;color:{sub_color};margin-bottom:10px;">{html.escape(sub)}</div>'
+        + _white_card("".join(parts), 20, "padding:12px 14px;")
+    )
+
+
+def queue_chart_table(s, tz=None, width=680, height=190):
+    """The email's version of the queue chart: a bar per reading.
     Built from tables and divs rather than SVG: Outlook strips inline SVG, which
     turned the chart into a string of numbers in the email. Readings inside the
     Dash are blue; the start and the latest are labeled with their times."""
@@ -1368,7 +1454,7 @@ def listening_html(np, up_next, started, tz=None):
     return _section_title("Listening") + now_playing_card_html(np, up_next, more)
 
 
-def _day_top_parts(s, tz=None, d=None):
+def _day_top_parts(s, tz=None, d=None, email=False):
     """The web report's top sections as html: chart, now playing and episodes
     in progress, then the cards and highlights."""
     qs, qe = s["queue_start"], s["queue_end"]
@@ -1378,7 +1464,7 @@ def _day_top_parts(s, tz=None, d=None):
     if d and d.get("now_playing"):
         np = d["now_playing"]
         nxt = rr._next_up_episode(d) if d["queue"].get("episodes") else None
-    chart = queue_chart_svg(s, tz).replace("margin:8px 0 4px;", "margin:20px 0 4px;", 1)
+    chart = (queue_chart_table if email else queue_chart_svg)(s, tz).replace("margin:8px 0 4px;", "margin:20px 0 4px;", 1)
     playing = listening_html(np, nxt, started, tz)
     stats = card_grid(cards)
     hl = highlights(s, tz)
@@ -1401,11 +1487,11 @@ def render_day_top_pages(s, tz=None, generated=None, d=None):
     return pages
 
 
-def render_day_html(s, tz=None, generated=None, d=None):
+def render_day_html(s, tz=None, generated=None, d=None, email=False):
     title = f"Daily Flow — {pretty_day_full(s['day'])}"
     if not s["snapshots"]:
         return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
-    chart, playing, stats = _day_top_parts(s, tz, d)
+    chart, playing, stats = _day_top_parts(s, tz, d, email)
     parts = [chart, playing, stats, timeline_html(s, tz), piling_up_html(s, d, tz)]
     return _page(title, "".join(parts), day_headline(s), generated, tz,
                  queue_section_html(d) if d else "")
@@ -1761,9 +1847,9 @@ def take_snapshot(label, quiet=False, open_report=False, history_path=None):
             w = summarize_week(history, day)
             _send(json.dumps(build_discord_week(w, generated)), "post_discord.py")
     if recap and _flow_email_enabled():
-        email_day(recap, render_day_html(recap, None, generated, d), f"{cfg_label} (yesterday)")
+        email_day(recap, render_day_html(recap, None, generated, d, email=True), f"{cfg_label} (yesterday)")
     if label == "evening" and _flow_email_enabled():
-        email_day(s, render_day_html(s, None, generated, d), cfg_label)
+        email_day(s, render_day_html(s, None, generated, d, email=True), cfg_label)
         if "week" in paths:
             w = summarize_week(history, day)
             _send(email_payload(f"{cfg_label} \u2014 Weekly Flow: finished {dur(w['listened_seconds'])}",
@@ -1850,7 +1936,7 @@ def main(argv=None):
         elif args.format == "html":
             print(render_day_html(s, None, None, d))
         else:
-            print(email_payload(f"Daily Flow, {pretty_day(day)}", render_day_html(s, None, None, d)))
+            print(email_payload(f"Daily Flow, {pretty_day(day)}", render_day_html(s, None, None, d, email=True)))
     else:
         w = summarize_week(history, day)
         if args.format == "chat":
