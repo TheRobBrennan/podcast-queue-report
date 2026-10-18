@@ -789,8 +789,9 @@ class ChartAndProgressTests(unittest.TestCase):
 
     def test_queue_chart_draws_the_line_the_dash_and_the_labels(self):
         svg = flow.queue_chart_svg(self.s, NY)
-        self.assertIn("<polyline", svg)
-        self.assertEqual(svg.count("<circle"), 4)
+        self.assertNotIn("<svg", svg)      # Outlook strips inline SVG
+        self.assertEqual(svg.count("<td valign=\"bottom\""), 4)    # one bar per reading
+        self.assertIn("#38bdf8", svg)
         self.assertIn("🚐 Dash", svg)
         self.assertIn("121 episodes now, down 3 from 124", svg)
         for hour in ("6am", "6pm"):

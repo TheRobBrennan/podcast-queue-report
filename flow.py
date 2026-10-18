@@ -1004,7 +1004,7 @@ def _page(title, body, headline=None, generated=None, tz=None, queue_html="", he
     )
     pill = generated_pill(generated, tz)
     top_html = (
-        f'<div style="text-align:center;font-size:25px;line-height:1.3;margin-bottom:16px;white-space:nowrap;">{emoji_row_html()}</div>\n'
+        f'<div style="text-align:center;font-size:25px;line-height:1.3;margin-bottom:16px;">{emoji_row_html()}</div>\n'
         f'{headline_html}\n'
         f'<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;letter-spacing:0.6px;">{html.escape(upper_keep_ordinal(title))}</div>\n'
         f'<div style="text-align:center;margin:10px 0 4px;">{pill}</div>'
@@ -1019,6 +1019,18 @@ def _page(title, body, headline=None, generated=None, tz=None, queue_html="", he
 {queue_html}
 {bottom_html}
 </div></body></html>"""
+
+
+def _media_row(side, side_w, body, gap=12, valign="top", outer="", right=""):
+    """Artwork/chip on the left, text filling the rest, optional right column.
+    A table, not flexbox: Outlook (which sends the email) drops flex layouts."""
+    td = f'vertical-align:{valign};'
+    cells = (f'<td style="{td}width:{side_w}px;padding-right:{gap}px;">{side}</td>'
+             f'<td style="{td}">{body}</td>')
+    if right:
+        cells += f'<td style="{td}text-align:right;white-space:nowrap;padding-left:{gap}px;">{right}</td>'
+    return (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'style="border-collapse:collapse;{outer}"><tr>{cells}</tr></table>')
 
 
 def _white_card(inner, margin=16, extra=""):
@@ -1046,14 +1058,13 @@ def mini_playing_html(np):
                'style="border-radius:6px;display:block;" alt="">')
         link = np.get("episode_url") or np.get("podcast_url")
         art = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
-    return (
-        '<div style="display:flex;gap:8px;align-items:center;margin-top:6px;">'
-        + (f'<div style="flex:0 0 36px;">{art}</div>' if art else "")
-        + '<div style="flex:1;min-width:0;font-size:12px;line-height:1.35;">'
+    body = (
+        '<div style="font-size:12px;line-height:1.35;">'
         '<span style="color:#047857;font-weight:700;">▶ Playing</span> '
         f'{_link(np["title"], np.get("episode_url"), "#065f46", 600)}'
-        f'<div style="color:#64748b;">{_link(np.get("podcast"), np.get("podcast_url"), "#64748b")}</div></div></div>'
+        f'<div style="color:#64748b;">{_link(np.get("podcast"), np.get("podcast_url"), "#64748b")}</div></div>'
     )
+    return _media_row(art, 36, body, gap=8, valign="middle", outer="margin-top:6px;")
 
 
 def timeline_html(s, tz=None):
@@ -1077,7 +1088,7 @@ def timeline_html(s, tz=None):
         bar = (f'<div style="height:10px;border-radius:5px;background:{"#38bdf8" if shaded else "#34d399"};width:{width}%;"></div>'
                if width else '<div style="font-size:11px;color:#cbd5e1;">·</div>')
         text, tone, delta = window_story(w)
-        chip_css = ("flex:0 0 38px;text-align:center;box-sizing:border-box;font-size:12px;font-weight:700;"
+        chip_css = ("display:block;text-align:center;font-size:12px;font-weight:700;"
                     "border-radius:10px;padding:1px 0;white-space:nowrap;")
         if tone:
             bg, fg, arrow = QUEUE_TONES[tone]
@@ -1099,8 +1110,7 @@ def timeline_html(s, tz=None):
             f'<div style="font-size:12px;color:#64748b;">{html.escape(label_name(sn))}</div></td>'
             f'<td style="padding:9px 12px;width:22%;vertical-align:middle;">{bar}</td>'
             f'<td style="padding:9px 12px 9px 4px;font-size:13px;vertical-align:top;line-height:1.35;">'
-            f'<div style="display:flex;gap:8px;align-items:flex-start;">{chip}'
-            f'<div style="flex:1;min-width:0;">{html.escape(text)}{playing_html}</div></div></td>'
+            + _media_row(chip, 38, f'{html.escape(text)}{playing_html}', gap=8) + '</td>'
             '</tr>'
         )
         if sn["label"] == "dash-start":
@@ -1161,14 +1171,11 @@ def piling_up_html(s, d=None, tz=None):
                      else "oldest episode")
             bullets = (f'<div style="font-size:12px;margin-top:4px;color:#475569;">• {title}'
                        f'<span style="color:#94a3b8;"> · {html.escape(when)}</span></div>')
-        items += (
-            '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #f1f5f9;">'
-            f'<div style="flex:0 0 40px;">{art}</div>'
-            '<div style="flex:1;min-width:0;">'
-            f'<div style="font-size:13px;font-weight:700;">{_link(row["podcast"], row.get("podcast_url"), "#1e293b")}</div>'
-            f'{bullets}</div>'
-            '<div style="text-align:right;font-size:12px;color:#64748b;white-space:nowrap;">'
-            f'{html.escape(episodes_phrase(row["count"]))}<br>{html.escape(dur_n(row["seconds"]))}</div></div>'
+        items += _media_row(
+            art, 40,
+            f'<div style="font-size:13px;font-weight:700;">{_link(row["podcast"], row.get("podcast_url"), "#1e293b")}</div>{bullets}',
+            outer="border-bottom:1px solid #f1f5f9;padding:10px 0;",
+            right=f'<div style="font-size:12px;color:#64748b;">{html.escape(episodes_phrase(row["count"]))}<br>{html.escape(dur_n(row["seconds"]))}</div>',
         )
     total = sum(r["count"] for r in rows)
     return (
@@ -1215,104 +1222,72 @@ def now_playing_card_html(np, up_next=None, more=""):
                    'style="border-radius:7px;display:block;" alt="">')
             link = up_next.get("episode_url") or up_next.get("podcast_url")
             small = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
-        nxt = (
-            '<div style="display:flex;gap:12px;align-items:center;margin-top:14px;padding:10px 12px;'
-            'background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;">'
-            f'<div style="flex:0 0 40px;">{small}</div>'
-            '<div style="flex:1;min-width:0;font-size:12px;color:#475569;">'
+        nxt_body = (
+            '<div style="font-size:12px;color:#475569;">'
             '<span style="display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:700;'
             'letter-spacing:0.5px;border-radius:4px;padding:1px 6px;margin-bottom:3px;">▶ UP NEXT</span>'
             f'<div style="font-size:13px;font-weight:600;">{_link(up_next["title"], up_next.get("episode_url"), "#1e293b")}</div>'
             f'<div>{_link(up_next.get("podcast"), up_next.get("podcast_url"), "#64748b")}'
             + (f' · {html.escape(up_next["duration_fmt"])}' if up_next.get("duration_fmt") else "")
-            + '</div></div></div>'
+            + '</div></div>'
         )
+        nxt = ('<div style="margin-top:14px;padding:10px 12px;background:#eef2ff;border:1px solid #c7d2fe;'
+               'border-radius:10px;">' + _media_row(small, 40, nxt_body, valign="middle") + '</div>')
     return (
         '<div style="background:#ffffff;border:1px solid #e2e8f0;border-left:5px solid #16a34a;border-radius:12px;'
         'box-shadow:0 2px 8px rgba(15,23,42,0.08);padding:16px 20px;margin-bottom:20px;">'
-        '<div style="display:flex;gap:16px;align-items:flex-start;">'
-        f'<div style="flex:0 0 64px;">{art}</div>'
-        '<div style="flex:1;min-width:0;">'
-        f'{rr.now_playing_badge()}'
-        f'<div style="font-size:15px;font-weight:700;margin-top:6px;color:#065f46;">'
-        f'{_link(np.get("title"), np.get("episode_url"), "#065f46")}</div>'
-        f'<div style="font-size:13px;margin-top:2px;color:#047857;">{_link(np.get("podcast"), np.get("podcast_url"), "#047857")}</div>'
-        f'{progress}</div></div>{nxt}{more}</div>'
+        + _media_row(
+            art, 64,
+            f'{rr.now_playing_badge()}'
+            f'<div style="font-size:15px;font-weight:700;margin-top:6px;color:#065f46;">'
+            f'{_link(np.get("title"), np.get("episode_url"), "#065f46")}</div>'
+            f'<div style="font-size:13px;margin-top:2px;color:#047857;">{_link(np.get("podcast"), np.get("podcast_url"), "#047857")}</div>'
+            f'{progress}', gap=16)
+        + f'{nxt}{more}</div>'
     )
 
 
 def queue_chart_svg(s, tz=None, width=680, height=190):
-    """The queue's size at each reading across the day: a line with a tinted
-    area, a dot per reading, the Dash shaded, the start and the latest labeled."""
+    """The queue's size at each reading across the day, as a bar per reading.
+    Built from tables and divs rather than SVG: Outlook strips inline SVG, which
+    turned the chart into a string of numbers in the email. Readings inside the
+    Dash are blue; the start and the latest are labeled with their times."""
     snaps = s["snapshots"]
     if len(snaps) < 2:
         return ""
     zone = tz or ps.LOCAL_TZ
-    left, right, top, bottom = 38, 14, 16, 30
-    w, h = width - left - right, height - top - bottom
-    times = [parse_utc(x["ts"]).timestamp() for x in snaps]
-    t0, t1 = times[0], times[-1]
-    span = (t1 - t0) or 1
     counts = [x["queue_count"] for x in snaps]
-    vmax, vmin = max(counts) + 1, min(counts) - 1
-
-    def X(ts):
-        return left + (ts - t0) / span * w
-
-    def Y(v):
-        return top + (vmax - v) / ((vmax - vmin) or 1) * h
-
+    vmax, vmin = max(counts), min(counts) - 2
+    plot_h = height - 70
     tone = queue_tone(counts[0], counts[-1])
-    area_bg, line, _ = QUEUE_TONES[tone]
     line = {"better": "#16a34a", "same": "#ca8a04", "worse": "#dc2626"}[tone]
-    parts = [f'<svg viewBox="0 0 {width} {height}" width="100%" role="img" '
-             f'aria-label="The queue over the day" style="display:block;font-family:inherit;">']
-    for v in sorted({vmax, vmin, round((vmax + vmin) / 2)}):
-        parts.append(f'<line x1="{left}" y1="{Y(v):.1f}" x2="{left + w}" y2="{Y(v):.1f}" stroke="#e2e8f0" stroke-width="1"/>'
-                     f'<text x="{left - 6}" y="{Y(v) + 4:.1f}" font-size="11" fill="#94a3b8" text-anchor="end">{v}</text>')
-    # Dash windows
-    for dsh in s["dashes"]:
-        x1, x2 = X(parse_utc(dsh["start"]["ts"]).timestamp()), X(parse_utc(dsh["end"]["ts"]).timestamp())
-        parts.append(f'<rect x="{x1:.1f}" y="{top}" width="{max(x2 - x1, 2):.1f}" height="{h}" fill="#e0f2fe" opacity="0.9"/>'
-                     f'<text x="{(x1 + x2) / 2:.1f}" y="{top + 12}" font-size="11" fill="#0369a1" text-anchor="middle">🚐 Dash</text>')
-    pts = [(X(ts), Y(c)) for ts, c in zip(times, counts)]
-    path = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
-    base = top + h
-    parts.append(f'<polygon points="{pts[0][0]:.1f},{base} {path} {pts[-1][0]:.1f},{base}" fill="{area_bg}" opacity="0.85"/>')
-    parts.append(f'<polyline points="{path}" fill="none" stroke="{line}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>')
-    last_dot_x = last_label_x = None
-    for i, ((x, y), c) in enumerate(zip(pts, counts)):
-        if last_dot_x is None or x - last_dot_x >= 7 or i == len(pts) - 1:
-            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#fff" stroke="{line}" stroke-width="2"/>')
-            last_dot_x = x
-        important = i == 0 or c in (min(counts), max(counts))
-        if (important or i == len(pts) - 1 or len(pts) <= 12) and (last_label_x is None or x - last_label_x >= 30):
-            parts.append(f'<text x="{x:.1f}" y="{y - 9:.1f}" font-size="11" font-weight="700" fill="#334155" '
-                         f'text-anchor="middle">{c}</text>')
-            last_label_x = x
-    # time axis: an hourly tick when the day is long enough, never two labels on top of each other
-    first_local = datetime.datetime.fromtimestamp(t0, zone)
-    last_local = datetime.datetime.fromtimestamp(t1, zone)
-    hour = first_local.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(hours=1)
-    step = 1 if span <= 8 * 3600 else 2 if span <= 16 * 3600 else 3
-    marks = [first_local]
-    while hour.timestamp() < t1:
-        marks.append(hour)
-        hour += datetime.timedelta(hours=step)
-    marks.append(last_local)
-    kept = []
-    for tk in marks:
-        x = X(tk.timestamp())
-        if kept and x - kept[-1][0] < 44:
-            if tk is last_local and len(kept) > 1:
-                kept.pop()          # the latest time wins over a tick right beside it
-            else:
-                continue
-        kept.append((x, tk))
-    for x, tk in kept:
+    dash_spans = [(parse_utc(d["start"]["ts"]), parse_utc(d["end"]["ts"])) for d in s["dashes"]]
+    n = len(snaps)
+    show_all = n <= 30
+    label_every = max(1, -(-n // 6))
+    labels, bars, times = "", "", ""
+    for i, (sn, c) in enumerate(zip(snaps, counts)):
+        t = parse_utc(sn["ts"])
+        in_dash = any(a <= t <= b for a, b in dash_spans)
+        color = "#38bdf8" if in_dash else line
+        bar_h = max(6, round(plot_h * (c - vmin) / ((vmax - vmin) or 1)))
+        text = str(c) if (show_all or i in (0, n - 1) or c in (min(counts), max(counts))) else "&nbsp;"
+        cell = "padding:0 1px;text-align:center;"
+        labels += f'<td style="{cell}font-size:10px;font-weight:700;color:#334155;vertical-align:bottom;">{text}</td>'
+        bars += (f'<td valign="bottom" style="{cell}vertical-align:bottom;height:{plot_h}px;">'
+                 f'<div style="height:{bar_h}px;background:{color};border-radius:3px 3px 0 0;font-size:1px;line-height:1px;">&nbsp;</div></td>')
+    for i in range(0, n, label_every):
+        span = min(label_every, n - i)
+        tk = datetime.datetime.fromtimestamp(parse_utc(snaps[i]["ts"]).timestamp(), zone)
         label = tk.strftime("%-I%p").lower() if tk.minute == 0 else tk.strftime("%-I:%M%p").lower()
-        parts.append(f'<text x="{x:.1f}" y="{height - 8}" font-size="11" fill="#94a3b8" text-anchor="middle">{label}</text>')
-    parts.append("</svg>")
+        times += (f'<td colspan="{span}" style="font-size:10px;color:#94a3b8;text-align:left;padding-top:4px;'
+                  f'border-top:1px solid #e2e8f0;white-space:nowrap;">{label}</td>')
+    table = (f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+             f'style="border-collapse:collapse;table-layout:fixed;">'
+             f'<tr>{labels}</tr><tr>{bars}</tr><tr>{times}</tr></table>')
+    legend = ('<div style="font-size:11px;color:#0369a1;margin-top:6px;">\U0001f690 Dash readings in blue</div>'
+              if dash_spans else "")
+    parts = [table, legend]
     delta = counts[-1] - counts[0]
     sub = (f"{counts[-1]} episodes now, down {abs(delta)} from {counts[0]}" if delta < 0 else
            f"{counts[-1]} episodes now, up {delta} from {counts[0]}" if delta > 0 else
@@ -1343,17 +1318,16 @@ def _progress_rows(items, tz=None):
                    'style="border-radius:7px;display:block;" alt="">')
             link = it.get("episode_url") or it.get("podcast_url")
             art = f'<a href="{html.escape(link)}" target="_blank">{img}</a>' if link else img
-        rows += (
-            '<div style="display:flex;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid #f1f5f9;">'
-            f'<div style="flex:0 0 40px;">{art}</div>'
-            '<div style="flex:1;min-width:0;">'
+        rows += _media_row(
+            art, 40,
             f'<div style="font-size:13px;font-weight:700;">{_link(it.get("title"), it.get("episode_url"), "#1e293b")}</div>'
             f'<div style="font-size:12px;color:#64748b;">{_link(it.get("podcast"), it.get("podcast_url"), "#64748b")}</div>'
             f'{published}'
             '<div style="height:8px;border-radius:4px;background:#e2e8f0;margin-top:7px;">'
-            f'<div style="height:8px;border-radius:4px;background:linear-gradient(90deg,#34d399,#16a34a);width:{it["pct"]}%;"></div></div></div>'
-            f'<div style="flex:0 0 auto;text-align:right;font-size:12px;color:#64748b;white-space:nowrap;">'
-            f'<div style="font-size:16px;font-weight:800;color:#15803d;">{it["pct"]}%</div>{html.escape(str(it.get("left") or ""))} left</div></div>'
+            f'<div style="height:8px;border-radius:4px;background:#16a34a;width:{it["pct"]}%;"></div></div>',
+            valign="middle", outer="border-bottom:1px solid #f1f5f9;",
+            right=f'<div style="font-size:12px;color:#64748b;"><div style="font-size:16px;font-weight:800;color:#15803d;">{it["pct"]}%</div>'
+                  f'{html.escape(str(it.get("left") or ""))} left</div>',
         )
     return rows
 
