@@ -936,6 +936,24 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Weekly Flow", flow.render_week_chat(w, NY))
         self.assertIn("Weekly Flow", flow.render_week_html(w, NY))
 
+    def test_queue_list_puts_now_playing_first_and_up_next_right_below(self):
+        def ep(title, pubdate):
+            return {"title": title, "podcast": "Show", "pubdate": pubdate, "duration_fmt": "30 mins",
+                    "in_progress": False, "episode_url": f"https://e/{title}"}
+        d = minimal_run_json()
+        d["queue"]["episodes"] = [ep("Oldest", "2026-10-12T08:00:00"), ep("Playing", "2026-10-12T09:00:00"),
+                                  ep("Newest", "2026-10-13T08:00:00")]
+        d["now_playing"] = {"title": "Playing", "podcast": "Show", "episode_url": "https://e/Playing",
+                            "remaining_fmt": "10 mins"}
+        page = flow.rr.build_html(d)
+        # the hero card repeats the playing title above the list, so look at the last mention of each
+        playing, oldest, newest = (page.rindex(f">{t}</a>") for t in ("Playing", "Oldest", "Newest"))
+        self.assertLess(playing, oldest)
+        self.assertLess(oldest, newest)
+        self.assertTrue(playing < page.rindex("NOW PLAYING") < oldest)
+        self.assertEqual(page.count("▶ UP NEXT"), 1)
+        self.assertTrue(oldest < page.index("▶ UP NEXT", playing) < newest)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -430,7 +430,9 @@ def build_html(d, embed=False):
         return img
 
     rows = ""
-    for i, e in enumerate(q["episodes"]):
+    # Now Playing always leads the list; sorted() is stable, so every other
+    # row keeps the queue's oldest-first order.
+    for e in sorted(q["episodes"], key=lambda ep: not _is_now_playing(ep)):
         pub = datetime.datetime.fromisoformat(e["pubdate"]).replace(tzinfo=datetime.timezone.utc).astimezone(local_tz(d))
         is_playing = _is_now_playing(e)
         if is_playing:
