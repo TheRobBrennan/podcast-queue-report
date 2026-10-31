@@ -1650,6 +1650,7 @@ def build_discord_day(s, generated=None, tz=None, d=None):
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 IMAGE_WIDTH = 680
 IMAGE_SCALE = 2
+CHROME_TIMEOUT_SECONDS = 60
 
 
 def capture_day_images(s, generated, d, tz=None, out_dir=None):
@@ -1660,7 +1661,10 @@ def capture_day_images(s, generated, d, tz=None, out_dir=None):
     if not os.path.exists(CHROME):
         return []
     out_dir = out_dir or tempfile.mkdtemp(prefix="flow_png_")
-    base = [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars"]
+    # Its own profile, so a render never contends with the Chrome Rob is using; and a
+    # time limit on every call, because a stalled render once hung the hourly tick for days.
+    base = [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars",
+            f"--user-data-dir={tempfile.mkdtemp(prefix='flow_chrome_')}"]
     files = []
     for i, page in enumerate(render_day_top_pages(s, tz, generated, d), 1):
         probe = page.replace("</body>", (
@@ -1670,15 +1674,18 @@ def capture_day_images(s, generated, d, tz=None, out_dir=None):
         with open(html_path, "w") as f:
             f.write(probe)
         url = "file://" + urllib.parse.quote(html_path)
-        dom = subprocess.run(base + [f"--window-size={IMAGE_WIDTH},900", "--virtual-time-budget=5000", "--dump-dom", url],
-                             capture_output=True, text=True).stdout
-        m = re.search(r'data-h="(\d+)"', dom)
-        if not m:
+        try:
+            dom = subprocess.run(base + [f"--window-size={IMAGE_WIDTH},900", "--virtual-time-budget=5000", "--dump-dom", url],
+                                 capture_output=True, text=True, timeout=CHROME_TIMEOUT_SECONDS).stdout
+            m = re.search(r'data-h="(\d+)"', dom)
+            if not m:
+                return []
+            path = os.path.join(out_dir, f"daily-flow-{i}.png")
+            subprocess.run(base + [f"--force-device-scale-factor={IMAGE_SCALE}",
+                                   f"--window-size={IMAGE_WIDTH},{int(m.group(1))}",
+                                   f"--screenshot={path}", url], capture_output=True, timeout=CHROME_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
             return []
-        path = os.path.join(out_dir, f"daily-flow-{i}.png")
-        subprocess.run(base + [f"--force-device-scale-factor={IMAGE_SCALE}",
-                               f"--window-size={IMAGE_WIDTH},{int(m.group(1))}",
-                               f"--screenshot={path}", url], capture_output=True)
         if not os.path.exists(path):
             return []
         files.append(path)
