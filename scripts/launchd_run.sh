@@ -33,10 +33,24 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   exit $?
 fi
 
+# A tick normally finishes in a couple of minutes. launchd will not start a new
+# run while the last one is alive, so a hung one silently stops every later
+# hourly reading (it did, for two days, from 2026-10-28). Cap it instead.
+TICK_TIMEOUT="${TICK_TIMEOUT:-600}"
+RUN=(python3 flow.py tick)
+if command -v timeout >/dev/null 2>&1; then
+  RUN=(timeout -k 10 "$TICK_TIMEOUT" "${RUN[@]}")
+fi
+
 log "TICK"
-if python3 flow.py tick; then
+"${RUN[@]}"
+rc=$?
+if [[ $rc -eq 0 ]]; then
   log "OK"
+elif [[ $rc -eq 124 ]]; then
+  log "FAIL: flow.py tick timed out after ${TICK_TIMEOUT}s and was stopped"
+  exit 1
 else
-  log "FAIL: flow.py tick exited $?"
+  log "FAIL: flow.py tick exited $rc"
   exit 1
 fi
