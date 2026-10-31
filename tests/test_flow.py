@@ -796,6 +796,17 @@ class ChartAndProgressTests(unittest.TestCase):
         for hour in ("6am", "6pm"):
             self.assertIn(f">{hour}<", svg)
 
+    def test_a_stalled_chrome_gives_up_instead_of_hanging_the_tick(self):
+        from unittest import mock
+        import subprocess
+        stalled = subprocess.TimeoutExpired(cmd="chrome", timeout=flow.CHROME_TIMEOUT_SECONDS)
+        with mock.patch.object(flow.subprocess, "run", side_effect=stalled) as run, \
+                mock.patch.object(flow.os.path, "exists", return_value=True), \
+                tempfile.TemporaryDirectory() as out:
+            self.assertEqual(flow.capture_day_images(self.s, flow.utcnow(), None, NY, out_dir=out), [])
+        self.assertEqual(run.call_args.kwargs["timeout"], flow.CHROME_TIMEOUT_SECONDS)
+        self.assertTrue(any(a.startswith("--user-data-dir=") for a in run.call_args.args[0]))
+
     def test_email_chart_is_tables_not_svg_because_outlook_strips_svg(self):
         chart = flow.queue_chart_table(self.s, NY)
         self.assertNotIn("<svg", chart)
