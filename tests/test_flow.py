@@ -823,7 +823,9 @@ class ChartAndProgressTests(unittest.TestCase):
         self.assertEqual(order, sorted(order))
 
     def test_chart_needs_two_readings_and_tolerates_a_crowd(self):
-        self.assertEqual(flow.queue_chart_svg(flow.summarize_day(self.history[:1], datetime.date(2026, 10, 16), NY), NY), "")
+        one = flow.queue_chart_svg(flow.summarize_day(self.history[:1], datetime.date(2026, 10, 16), NY), NY)
+        self.assertNotIn("<svg", one)
+        self.assertIn("two readings", one)
         crowd = [snap("2026-10-16T06:00", "morning", 124)] + [
             snap(f"2026-10-16T17:{m:02d}", "manual", 121) for m in range(0, 30, 3)]
         s = flow.summarize_day(crowd, datetime.date(2026, 10, 16), NY)

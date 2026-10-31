@@ -1253,7 +1253,11 @@ def queue_chart_svg(s, tz=None, width=680, height=190):
     area, a dot per reading, the Dash shaded, the start and the latest labeled."""
     snaps = s["snapshots"]
     if len(snaps) < 2:
-        return ""
+        # one reading can't draw a line; say so instead of leaving a blank gap
+        return ('<div style="font-size:13px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.6px;'
+                'margin:8px 0 4px;">The queue over your day</div>'
+                + _white_card('<div style="font-size:13px;color:#64748b;">The graph appears once there are two readings for the day.</div>',
+                              20, "padding:12px 14px;"))
     zone = tz or ps.LOCAL_TZ
     left, right, top, bottom = 38, 14, 16, 30
     w, h = width - left - right, height - top - bottom
