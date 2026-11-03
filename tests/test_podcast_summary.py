@@ -53,6 +53,7 @@ def make_db():
             ZLASTDATEPLAYED real,
             ZENTITLEMENTSTATE integer,
             ZBYTESIZE integer,
+            ZFEEDDELETED integer default 0,
             ZUNPLAYEDTAB integer,
             ZBACKCATALOG integer,
             ZCURRENTMEDIAENCLOSURE integer,
@@ -110,7 +111,7 @@ class QueueFixture:
     def episode(self, podcast_pk, title, pubdate, duration=1800, playhead=0,
                 playstate=0, entitlement=0, last_played=None, description="",
                 asset_url="https://example.com/audio.mp3", byte_size=12345,
-                unplayedtab=1, backcatalog=0):
+                unplayedtab=1, backcatalog=0, feed_deleted=0):
         pk = self._next_ep_pk
         self._next_ep_pk += 1
         track_id = self._next_track_id
@@ -118,11 +119,11 @@ class QueueFixture:
         self.cur.execute(
             "insert into ZMTEPISODE (Z_PK, ZPODCAST, ZTITLE, ZPUBDATE, ZPLAYHEAD, "
             "ZSTORETRACKID, ZPLAYSTATE, ZLASTDATEPLAYED, ZENTITLEMENTSTATE, "
-            "ZBYTESIZE, ZUNPLAYEDTAB, ZBACKCATALOG, ZCURRENTMEDIAENCLOSURE, ZDESCRIPTIONOBJECT) "
-            "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "ZBYTESIZE, ZUNPLAYEDTAB, ZBACKCATALOG, ZCURRENTMEDIAENCLOSURE, ZDESCRIPTIONOBJECT, ZFEEDDELETED) "
+            "values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (pk, podcast_pk, title, ps.dt_to_cd(pubdate), playhead, track_id,
              playstate, ps.dt_to_cd(last_played) if last_played else None,
-             entitlement, byte_size, unplayedtab, backcatalog, pk, pk),
+             entitlement, byte_size, unplayedtab, backcatalog, pk, pk, feed_deleted),
         )
         self.cur.execute(
             "insert into ZMTMEDIAENCLOSURE (Z_PK, ZEPISODE, ZDURATION, ZREMOTEURL) values (?, ?, ?, ?)",
@@ -167,6 +168,42 @@ class GetUnplayedQueueTests(unittest.TestCase):
         )
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
         self.assertIn("actively playing, old publish date", self.titles(queue))
+
+    def test_feed_deleted_never_started_episode_is_skipped(self):
+        """Regression for 2026-11-03: a publisher republished an episode
+        under a new GUID, Apple kept the old row marked ZFEEDDELETED=1 and
+        hid it, but the report counted it as a second copy."""
+        pod = self.fx.podcast("Show F")
+        self.fx.episode(pod, "same story", self.now - datetime.timedelta(days=2), feed_deleted=1)
+        self.fx.episode(pod, "same story", self.now - datetime.timedelta(days=2))
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        self.assertEqual([e["title"] for e in queue], ["same story"])
+        self.assertEqual(ps.get_duplicate_episodes(queue), [])
+
+    def test_feed_deleted_episode_alone_is_skipped(self):
+        pod = self.fx.podcast("Show G")
+        self.fx.episode(pod, "gone from the feed", self.now - datetime.timedelta(days=2), feed_deleted=1)
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        self.assertNotIn("gone from the feed", self.titles(queue))
+
+    def test_feed_deleted_started_episode_is_kept(self):
+        """An episode Rob is partway through stays whatever the feed did."""
+        pod = self.fx.podcast("Show H")
+        self.fx.episode(
+            pod, "partway through, then pulled", self.now - datetime.timedelta(days=3),
+            playhead=600, playstate=1, last_played=self.now - datetime.timedelta(hours=2), feed_deleted=1,
+        )
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        self.assertIn("partway through, then pulled", self.titles(queue))
+
+    def test_two_live_copies_with_the_same_title_are_still_a_duplicate(self):
+        """The duplicate warning keeps working for the real cross-posted case."""
+        a = self.fx.podcast("Show I")
+        b = self.fx.podcast("Show J")
+        self.fx.episode(a, "network crossover", self.now - datetime.timedelta(days=1))
+        self.fx.episode(b, "network crossover", self.now - datetime.timedelta(days=1))
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        self.assertEqual(len(ps.get_duplicate_episodes(queue)), 1)
 
     def test_started_episode_excluded_once_abandoned(self):
         """Regression for the 2026-09-10 bug: a started-but-abandoned
