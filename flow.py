@@ -985,6 +985,13 @@ def generated_pill(generated, tz=None):
     )
 
 
+def duplicates_top_html(d):
+    """The possible-duplicates warning for the top of a flow page, right under
+    the header, so it is seen before the day's chart rather than at the bottom
+    inside the unplayed queue."""
+    return rr.build_duplicates_html(d, margin_top=20) if d else ""
+
+
 def queue_section_html(d):
     """The whole unplayed queue, every episode with its artwork, for appending
     under the flow summary (the web page and the optional email)."""
@@ -992,7 +999,7 @@ def queue_section_html(d):
         '<div style="border-top:2px dashed #cbd5e1;margin:40px 0 28px;"></div>'
         '<div style="text-align:center;font-size:13px;font-weight:600;color:#64748b;'
         'text-transform:uppercase;letter-spacing:0.6px;margin-bottom:20px;">The unplayed queue</div>'
-        + rr.build_html(d, embed=True)
+        + rr.build_html(d, embed=True, include_duplicates=False)
     )
 
 
@@ -1496,7 +1503,7 @@ def render_day_html(s, tz=None, generated=None, d=None, email=False):
     if not s["snapshots"]:
         return _page(title, "<p>No snapshots recorded.</p>", None, generated, tz)
     chart, playing, stats = _day_top_parts(s, tz, d, email)
-    parts = [chart, playing, stats, timeline_html(s, tz), piling_up_html(s, d, tz)]
+    parts = [duplicates_top_html(d), chart, playing, stats, timeline_html(s, tz), piling_up_html(s, d, tz)]
     return _page(title, "".join(parts), day_headline(s), generated, tz,
                  queue_section_html(d) if d else "")
 
@@ -1521,7 +1528,8 @@ def render_week_html(w, tz=None, generated=None, d=None):
         for d in w["days"]
     )
     body = (
-        f'<div style="margin-top:20px;">{card_grid(cards)}</div>'
+        duplicates_top_html(d)
+        + f'<div style="margin-top:20px;">{card_grid(cards)}</div>'
         '<table width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;'
         'box-shadow:0 1px 3px rgba(0,0,0,0.08);font-size:13px;">'
         "<tr style='text-align:left;color:#94a3b8;font-size:11px;text-transform:uppercase;'>"

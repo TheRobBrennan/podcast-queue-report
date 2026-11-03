@@ -352,7 +352,32 @@ def build_email(d):
     # summary to keep in sync as build_html grows new sections.
     return subject, build_html(d)
 
-def build_html(d, embed=False):
+def build_duplicates_html(d, margin_top=0):
+    """The yellow "possible duplicates" warning card, or "" when the queue has
+    none. Its own function so a report that wraps build_html (the daily and
+    weekly flow pages) can hoist the warning to the top instead of leaving it
+    buried inside the queue section at the bottom."""
+    dupes = d.get("duplicates") or []
+    if not dupes:
+        return ""
+    dup_rows = ""
+    for dup in dupes:
+        shows_html = ", ".join(html.escape(p) for p in dup["podcasts"])
+        dup_rows += (
+            f'<div style="margin-top:8px;font-size:13px;color:#78350f;">'
+            f'&ldquo;{html.escape(dup["title"])}&rdquo; &mdash; same episode on '
+            f'{dup["count"]} shows: {shows_html}</div>'
+        )
+    return (
+        '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;'
+        f'padding:14px 20px;margin:{margin_top}px 0 32px;">'
+        '<div style="font-size:14px;font-weight:700;color:#92400e;">'
+        '🔁 Possible duplicates &mdash; pick one, mark the rest played</div>'
+        + dup_rows + '</div>'
+    )
+
+
+def build_html(d, embed=False, include_duplicates=True):
     """The full HTML report. `embed=True` returns just the queue part as a
     fragment - without the cast row, headline, generated stamps or now-playing
     banner, which the page it is embedded in already carries."""
@@ -393,25 +418,7 @@ def build_html(d, embed=False):
     now_playing_data = d.get("now_playing")
     up_next_episode = _next_up_episode(d)
 
-    dupes = d.get("duplicates") or []
-    if dupes:
-        dup_rows = ""
-        for dup in dupes:
-            shows_html = ", ".join(html.escape(p) for p in dup["podcasts"])
-            dup_rows += (
-                f'<div style="margin-top:8px;font-size:13px;color:#78350f;">'
-                f'&ldquo;{html.escape(dup["title"])}&rdquo; &mdash; same episode on '
-                f'{dup["count"]} shows: {shows_html}</div>'
-            )
-        duplicates_html = (
-            '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;'
-            'padding:14px 20px;margin-bottom:32px;">'
-            '<div style="font-size:14px;font-weight:700;color:#92400e;">'
-            '🔁 Possible duplicates &mdash; pick one, mark the rest played</div>'
-            + dup_rows + '</div>'
-        )
-    else:
-        duplicates_html = ""
+    duplicates_html = build_duplicates_html(d) if include_duplicates else ""
 
     def _is_now_playing(e):
         return _matches_now_playing(now_playing_data, e)

@@ -565,6 +565,32 @@ class GeneratedAndQueueTests(unittest.TestCase):
         self.assertEqual(page.count("</body>"), 1)
         self.assertEqual(page.count("display:inline-block;margin:0 2px;"), 21)  # one emoji row only
 
+    def dup_run_json(self):
+        d = minimal_run_json()
+        d["duplicates"] = [{"title": "Same Story", "count": 2, "podcasts": ["Show A", "Show B"]}]
+        return d
+
+    def test_duplicate_warning_is_at_the_top_of_the_day_page_exactly_once(self):
+        page = flow.render_day_html(self.s, NY, self.generated, self.dup_run_json())
+        self.assertEqual(page.count("Possible duplicates"), 1)
+        self.assertLess(page.index("Possible duplicates"), page.index("<svg"))  # above the day's chart
+        self.assertLess(page.index("Possible duplicates"), page.index("The unplayed queue"))
+        self.assertIn("Same Story", page)
+
+    def test_duplicate_warning_is_at_the_top_of_the_week_page_exactly_once(self):
+        w = flow.summarize_week(self.history, datetime.date(2026, 10, 16), NY)
+        page = flow.render_week_html(w, NY, self.generated, self.dup_run_json())
+        self.assertEqual(page.count("Possible duplicates"), 1)
+        self.assertLess(page.index("Possible duplicates"), page.index("Finished"))
+        self.assertLess(page.index("Possible duplicates"), page.index("The unplayed queue"))
+
+    def test_no_duplicate_warning_when_the_queue_has_none(self):
+        self.assertNotIn("Possible duplicates", flow.render_day_html(self.s, NY, self.generated, minimal_run_json()))
+        self.assertNotIn("Possible duplicates", flow.render_day_html(self.s, NY))
+
+    def test_the_standalone_report_still_carries_its_own_duplicate_warning(self):
+        self.assertEqual(flow.rr.build_html(self.dup_run_json()).count("Possible duplicates"), 1)
+
     def test_discord_day_images_payload_attaches_each_picture(self):
         payload = flow.build_discord_day_images(self.s, ["/x/daily-flow-1.png", "/x/daily-flow-2.png"], self.generated, NY)
         self.assertEqual(payload["_files"], ["/x/daily-flow-1.png", "/x/daily-flow-2.png"])
