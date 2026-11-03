@@ -605,7 +605,7 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
         select e.ZTITLE, p.ZTITLE, m.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
                e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, coalesce(d.ZPLAINTEXT, d.ZTEXT),
-               m.ZREMOTEURL, e.ZBYTESIZE, e.ZUNPLAYEDTAB
+               m.ZREMOTEURL, e.ZBYTESIZE, e.ZUNPLAYEDTAB, e.ZFEEDDELETED
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         left join ZMTMEDIAENCLOSURE m on m.Z_PK = e.ZCURRENTMEDIAENCLOSURE
         left join ZMTEPISODEDESCRIPTION d on d.Z_PK = e.ZDESCRIPTIONOBJECT
@@ -619,7 +619,7 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     started = []
     seen_started = set()
     for (title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played,
-         artwork_template, description, asset_url, byte_size, unplayed_tab) in rows:
+         artwork_template, description, asset_url, byte_size, unplayed_tab, feed_deleted) in rows:
         if (dur or 0) <= 0 and CROSS_PROMO_DISCLAIMER in (description or "").casefold():
             continue
         # A zero-duration episode with no asset at all can be legitimate
@@ -649,6 +649,19 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
         if (dur or 0) <= 0 and not asset_url and not byte_size and not unplayed_tab and pub < stuck_asset_cutoff_cd:
             continue
         is_started = playstate == 1 or (playhead or 0) > 0
+        # 14. Skip a never-started episode the publisher has deleted from its
+        #     feed (ZFEEDDELETED=1) - caught 2026-11-03. "ShortHand:
+        #     Werewolves" (RedHanded) was republished on Audioboom with a new
+        #     GUID, so the library holds two rows with the same title,
+        #     pubdate, and episode number, the original marked ZFEEDDELETED=1
+        #     (Apple keeps the row and its downloaded file) and the live one.
+        #     Rob's own Latest Episodes view showed one listing, this report
+        #     counted both, one episode too many in the count and a false
+        #     "possible duplicate" warning. Only never-started episodes are
+        #     skipped: one Rob has started stays, because he is partway
+        #     through it whatever the feed did.
+        if feed_deleted and not is_started:
+            continue
         # Fresh (never-started) candidates are bounded by window_days on
         # publish date - that's the whole point of the window. Started
         # candidates are bounded separately, by RECENCY OF LISTENING
