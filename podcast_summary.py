@@ -605,7 +605,7 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
         select e.ZTITLE, p.ZTITLE, m.ZDURATION, e.ZPUBDATE, e.ZPLAYHEAD,
                e.ZSTORETRACKID, p.ZSTORECLEANURL, p.Z_PK, e.ZPLAYSTATE,
                e.ZLASTDATEPLAYED, p.ZARTWORKTEMPLATEURL, coalesce(d.ZPLAINTEXT, d.ZTEXT),
-               m.ZREMOTEURL, e.ZBYTESIZE, e.ZUNPLAYEDTAB, e.ZFEEDDELETED
+               m.ZREMOTEURL, e.ZBYTESIZE, e.ZUNPLAYEDTAB, e.ZFEEDDELETED, e.Z_PK
         from ZMTEPISODE e join ZMTPODCAST p on e.ZPODCAST = p.Z_PK
         left join ZMTMEDIAENCLOSURE m on m.Z_PK = e.ZCURRENTMEDIAENCLOSURE
         left join ZMTEPISODEDESCRIPTION d on d.Z_PK = e.ZDESCRIPTIONOBJECT
@@ -619,7 +619,7 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     started = []
     seen_started = set()
     for (title, pod, dur, pub, playhead, track_id, pod_url, pod_pk, playstate, last_played,
-         artwork_template, description, asset_url, byte_size, unplayed_tab, feed_deleted) in rows:
+         artwork_template, description, asset_url, byte_size, unplayed_tab, feed_deleted, episode_pk) in rows:
         if (dur or 0) <= 0 and CROSS_PROMO_DISCLAIMER in (description or "").casefold():
             continue
         # A zero-duration episode with no asset at all can be legitimate
@@ -708,7 +708,7 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
             "playhead": playhead or 0, "in_progress": is_started,
             "last_played": cd_to_dt(last_played) if last_played else None,
             "episode_url": episode_url, "podcast_url": pod_url, "podcast_pk": pod_pk,
-            "artwork_url": artwork_url(artwork_template),
+            "artwork_url": artwork_url(artwork_template), "episode_pk": episode_pk,
         }
         if is_started:
             if pod_pk in seen_started:
@@ -734,8 +734,26 @@ def get_unplayed_queue(cur, now_dt, window_days=UNPLAYED_QUEUE_WINDOW_DAYS):
     # even though both had the identical 07:00 publish date and Rob's
     # own Latest Episodes view correctly showed MrBallen on top.
     started.sort(key=lambda e: e["last_played"], reverse=True)
-    fresh.sort(key=lambda e: e["pubdate"], reverse=True)
+    # 15. Episodes sharing a publish date to the second are ordered by
+    #     their library row (Z_PK), oldest row first once the queue is
+    #     flipped to oldest-first below - caught 2026-11-03. Three episodes
+    #     (Scamfluencers, MrBallen, Morbid) all published at the identical
+    #     2026-10-26 03:00:00. Rob's Latest Episodes view listed the MrBallen
+    #     one right after the Scamfluencers one he was playing, but the
+    #     report named the Morbid one "up next", because a tie sorted only by
+    #     pubdate falls back to arbitrary SQL row order. Z_PK order matched
+    #     Apple's view in that one verified case (so did ZIMPORTDATE and
+    #     ZSTORETRACKID) - it is a deterministic tie-break, not a documented
+    #     Apple rule.
+    fresh.sort(key=lambda e: (e["pubdate"], e["episode_pk"]), reverse=True)
     return started + fresh
+
+def order_queue_oldest_first(queue):
+    """Flips a newest-first queue to oldest-first, the order Podcasts'
+    Latest Episodes view lists it, so [0] is 'up next'. Ties on publish
+    date put a started episode ahead of an unstarted one, then the lower
+    library row (episode_pk) first - see item 15 in get_unplayed_queue."""
+    return sorted(queue, key=lambda e: (e["pubdate"], not e["in_progress"], e.get("episode_pk") or 0))
 
 def get_duplicate_episodes(queue):
     """Groups queue episodes by exact title match (whitespace/case
@@ -876,7 +894,7 @@ def main():
     # active + fresh, so ties favor the active one) - sort explicitly
     # instead so a same-pubdate started episode still lands ahead of
     # an unstarted one after flipping to oldest-first.
-    queue_oldest_first = sorted(queue, key=lambda e: (e["pubdate"], not e["in_progress"]))
+    queue_oldest_first = order_queue_oldest_first(queue)
 
     up_next = queue_oldest_first[0] if queue_oldest_first else None
     up_next_remaining = None
