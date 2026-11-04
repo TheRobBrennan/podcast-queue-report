@@ -196,6 +196,23 @@ class GetUnplayedQueueTests(unittest.TestCase):
         queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
         self.assertIn("partway through, then pulled", self.titles(queue))
 
+    def test_same_pubdate_episodes_order_by_library_row_for_up_next(self):
+        """Regression for 2026-11-03: three episodes published at the
+        identical second. Podcasts listed the MrBallen one right after the
+        episode being played, the report named the Morbid one up next."""
+        playing = self.fx.podcast("Scamfluencers")
+        mrballen = self.fx.podcast("MrBallen")
+        morbid = self.fx.podcast("Morbid")
+        pub = self.now - datetime.timedelta(days=8)
+        self.fx.episode(playing, "Nevin Shapiro", pub, playhead=600, playstate=1,
+                        last_played=self.now - datetime.timedelta(hours=1))
+        self.fx.episode(mrballen, "Killer Without a Face", pub)
+        self.fx.episode(morbid, "The Disappearance of Jason Landry", pub)
+        queue = ps.get_unplayed_queue(self.fx.cur, self.now, window_days=21)
+        ordered = [e["title"] for e in ps.order_queue_oldest_first(queue)]
+        self.assertEqual(ordered, ["Nevin Shapiro", "Killer Without a Face", "The Disappearance of Jason Landry"])
+        self.assertEqual(ordered, [e["title"] for e in ps.order_queue_oldest_first(list(reversed(queue)))])
+
     def test_two_live_copies_with_the_same_title_are_still_a_duplicate(self):
         """The duplicate warning keeps working for the real cross-posted case."""
         a = self.fx.podcast("Show I")
