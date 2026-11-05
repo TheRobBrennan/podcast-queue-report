@@ -1,11 +1,14 @@
 # Podcast Queue Report skill
 
 Reference instructions for an AI agent (e.g. Claude in Claude Code or Cowork)
-to generate a report on the user's Apple Podcasts unplayed queue. Delivery
-(email, SMS, Discord) is automated via `make all` / `npm start`, gated
-entirely by which of REPORT_EMAIL, REPORT_PHONE, and DISCORD_WEBHOOK_URL
-are set in `.env` - leaving one blank skips that channel. There is no
-per-run confirmation step; consent is expressed by configuring `.env`.
+to generate a report on the user's Apple Podcasts unplayed queue. Nothing
+is sent by default: `make all` / `npm start` only generate the report.
+Delivery (email, SMS, Discord) happens only when the user asks for it for
+that run, via `make email` / `make sms` / `make discord` or `make send-all`,
+after showing what will be sent and to whom. Each skips cleanly if its
+`.env` destination (REPORT_EMAIL, REPORT_PHONE, DISCORD_WEBHOOK_URL) is
+blank, but a configured value is not consent for a given run. The scheduled
+launchd agent (`make tick` / `make cron`) is separate and still sends.
 
 > This skill assumes the repo has already been cloned and configured per the
 > "Setup" section of `README.md` (i.e. `.env` exists next to these scripts
@@ -31,9 +34,9 @@ per-run confirmation step; consent is expressed by configuring `.env`.
 
 1. `cd` into the repo (wherever it was cloned). Confirm `.env` exists; if
    not, stop and tell the user to complete Setup in `README.md` first.
-2. Run `make all` (queries the Podcasts DB once, then renders chat + sms +
-   email + html and sends email/sms/Discord from that single snapshot —
-   see `README.md`'s "Quick commands" section). If you only need one format
+2. Run `make all` (queries the Podcasts DB once, then renders chat + html
+   from that single snapshot, nothing is sent — see `README.md`'s "Quick
+   commands" section). If you only need one format
    without sending anything, `make chat` / `make sms` / `make email` /
    `make html` also work individually, each doing its own fresh query.
    Don't call `podcast_summary.py` directly more than once per report — it
@@ -57,10 +60,10 @@ per-run confirmation step; consent is expressed by configuring `.env`.
      generated `reports/podcast_report.html` file to the user directly
      (e.g. via a file-sharing tool) so they can open it themselves with one
      click.
-4. Delivery already happened as part of step 2 if `make all` was used - no
-   separate send step, and no per-run confirmation prompt, since `.env`
-   configuration is the consent mechanism (same model as Discord's
-   `DISCORD_WEBHOOK_URL`). `make email` uses Outlook and `make sms`
+4. Send nothing unless the user asks for email, text, or Discord for this
+   run. If they do, show what will be sent and to whom, get a yes, then use
+   `make email` / `make sms` / `make discord`, or `make send-all` for all
+   of them from one query. `make email` uses Outlook and `make sms`
    uses Messages.app (both AppleScript, macOS only) to send to
    `REPORT_EMAIL`/`REPORT_PHONE`; either skips with an explanatory message
    if its variable is blank. If the user asks to *stop* a channel from

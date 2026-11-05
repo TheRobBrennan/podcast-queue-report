@@ -47,8 +47,8 @@ make snapshot LABEL=morning|dash-start|dash-end|evening|manual
 make flow     # today's daily flow from the snapshot history
 make week     # this week's roll-up
 make tick     # what launchd runs hourly: fallback snapshot only if one is due
-make all      # runs the query ONCE, then renders chat+sms+email+html from
-              # that one snapshot — always use this over calling chat/sms/
+make all      # runs the query ONCE, then renders chat+html from that one
+              # snapshot and sends nothing (make send-all also sends) — always use this over calling chat/sms/
               # email/html separately if you want more than one format,
               # since each fresh query also advances the "since last check"
               # stats window
@@ -138,12 +138,16 @@ minimal built-in `.env` loader. Nothing to `pip install`.
   `.podcast_skill_state.json`'s "since last check" timestamp every time it
   runs — don't call it more than once per logical report (`make all`, not
   four separate `make chat && make sms && ...`).
-- **Delivery (email/text/Discord) is automatic, gated by `.env`.**
-  `make email` / `make sms` / `make discord` each send for real via
+- **`make all` and `npm start` send nothing (changed 2026-11-04).**
+  `make email` / `make sms` / `make discord` / `make send-all` each send for real via
   `scripts/send_email.py` (Outlook), `scripts/send_sms.py` (Messages.app),
   and `scripts/post_discord.py` (webhook) - and each skips cleanly if its
-  destination variable is blank. There's no per-run confirmation step;
-  consent is expressed by what's configured in `.env`. See `SKILL.md`.
+  destination variable is blank, but a configured value is not consent for a
+  run: send only when the user asks for that run, after showing what goes
+  where. The launchd agent (`make tick` / `make cron`) is the scheduled
+  exception. `make all` used to send email and post to Discord, which
+  happened during a screenshot request that never asked for it. See
+  `SKILL.md`.
 - **`make test` covers the deterministic logic, not the reverse-engineered
   heuristics.** `tests/test_podcast_summary.py` builds a synthetic
   in-memory SQLite schema and checks that `get_unplayed_queue()` /
