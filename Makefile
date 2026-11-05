@@ -2,7 +2,7 @@ SHELL := /bin/bash
 PYTHON ?= python3
 RUN_JSON ?= /tmp/podcast_run.json
 
-.PHONY: help setup run chat sms email html open all discord cron snapshot tag-dash flow week tick unlock commit clean test
+.PHONY: help setup run chat sms email html open all send-all discord cron snapshot tag-dash flow week tick unlock commit clean test
 
 help:
 	@echo "Podcast Queue Report — available commands:"
@@ -15,7 +15,8 @@ help:
 	@echo "  make email             Email the report via Outlook (needs REPORT_EMAIL in .env)"
 	@echo "  make html              Regenerate reports/podcast_report.html"
 	@echo "  make open              Regenerate the HTML report and open it in your browser"
-	@echo "  make all               Run once, then chat + html + email + sms + discord"
+	@echo "  make all               Run once, then chat + html. Sends nothing"
+	@echo "  make send-all          Run once, then chat + html + email + sms + discord, sends for real"
 	@echo "  make discord           Post the chat summary to Discord (needs DISCORD_WEBHOOK_URL in .env)"
 	@echo "  make cron              Run once, then email + discord + open the HTML report in your browser (used by the launchd agent)"
 	@echo "  make snapshot LABEL=x  Query once, record it in the flow history, post to Discord (morning | dash-start | dash-end | evening | manual)"
@@ -69,7 +70,9 @@ html: run
 open: html
 	@open reports/podcast_report.html
 
-all: chat email sms html discord
+all: chat html
+
+send-all: chat email sms html discord
 
 discord: run
 	@echo "💬 Posting to Discord..."

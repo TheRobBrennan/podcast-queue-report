@@ -208,7 +208,7 @@ knowing about if you're reading history: the 2026.09.12 fix (`d07e16b` /
 [#27](https://github.com/TheRobBrennan/podcast-queue-report/pull/27))
 removed email from `make cron` in favor of just opening the browser, then a
 later change brought email back alongside Discord and the browser open - so
-`make cron` now sends all three every scheduled run. `make all` (which also
+`make cron` now sends all three every scheduled run. `make send-all` (which also
 drags in the `sms` target) is still never used for the scheduled agent;
 Messages.app automation is noisier to run unattended, so `REPORT_PHONE`
 stays blank in `.env` for this path regardless.
