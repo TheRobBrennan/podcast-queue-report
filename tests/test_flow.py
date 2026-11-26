@@ -415,6 +415,18 @@ class StoryTests(unittest.TestCase):
         self.assertIn("#fee2e2", card(121, 124))
         self.assertIn("▲ 3 since 9:00am EDT", card(121, 124))
 
+    def test_a_lone_reading_counts_when_its_window_started_that_day(self):
+        history = [snap("2026-10-17T00:12", "evening", 122, 300000, 900000, 11, 42596, "2026-10-16T10:48")]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        self.assertEqual((s["listened_seconds"], s["listened_count"]), (42596, 11))
+        self.assertIn("finished", flow.window_sentence(s["windows"][0]))
+        self.assertTrue(s["by_part"])
+
+    def test_a_lone_reading_that_reaches_into_the_day_before_does_not_count(self):
+        history = [snap("2026-10-16T21:00", "evening", 122, 300000, 900000, 11, 42596, "2026-10-15T22:00")]
+        s = flow.summarize_day(history, datetime.date(2026, 10, 16), NY)
+        self.assertEqual((s["listened_seconds"], s["listened_count"]), (0, 0))
+
     def test_listening_counts_from_the_first_reading_of_the_day(self):
         # the first reading's window reaches back before the day's first reading
         history = [
