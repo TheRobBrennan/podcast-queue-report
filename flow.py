@@ -211,6 +211,18 @@ def day_snapshots(history, day, tz=None):
 
 # --- analysis --------------------------------------------------------------
 
+def counted_readings(snaps, tz=None):
+    """The readings whose listening belongs to the day's total. The first one's
+    window usually reaches back before the day's readings, so it is left out.
+    When it is the only reading and its window started inside this flow day,
+    it is the day's whole record and counts."""
+    if len(snaps) == 1:
+        only = snaps[0]
+        if day_of(local_dt(only, tz, key="since")) == day_of(local_dt(only, tz)):
+            return snaps
+        return []
+    return snaps[1:]
+
 def arrivals_seconds(prev, cur):
     """Estimated new content that landed in the queue between two snapshots:
     the change in queue length plus what was played out of it."""
@@ -249,8 +261,9 @@ def summarize_day(history, day, tz=None):
     # The first reading's window reaches back before the day's first reading,
     # so listening is counted from that reading on - the same "since" the
     # queue card uses.
-    out["listened_seconds"] = sum(s["played_seconds"] for s in snaps[1:])
-    out["listened_count"] = sum(s["played_count"] for s in snaps[1:])
+    counted = counted_readings(snaps, tz)
+    out["listened_seconds"] = sum(s["played_seconds"] for s in counted)
+    out["listened_count"] = sum(s["played_count"] for s in counted)
     out["queue_start"], out["queue_end"] = first, last
     out["queue_count_delta"] = last["queue_count"] - first["queue_count"]
     out["queue_seconds_delta"] = last["queue_seconds"] - first["queue_seconds"]
@@ -304,7 +317,7 @@ def summarize_day(history, day, tz=None):
             "snap": sn,
             "progress": episode_progress(prev, sn) if prev else None,
             "first": prev is None,
-            "played": 0 if prev is None else sn["played_seconds"],
+            "played": sn["played_seconds"] if sn in counted else 0,
             "arrivals": arrivals_seconds(prev, sn) if prev else None,
             "arrivals_count": arrivals_count(prev, sn) if prev else None,
             "queue_delta": (sn["queue_count"] - prev["queue_count"]) if prev else None,
@@ -355,7 +368,7 @@ def listening_by_part(windows, tz=None):
     zone = tz or ps.LOCAL_TZ
     totals = {}
     for w in windows:
-        if w.get("first") or w["played"] <= 0:
+        if w["played"] <= 0:
             continue
         start = parse_utc(w["snap"]["since"]).astimezone(zone)
         end = parse_utc(w["snap"]["ts"]).astimezone(zone)
@@ -393,7 +406,7 @@ def day_context(history, day, tz=None, cutoff=None):
         snaps = day_snapshots(history, d, tz)
         if not snaps:
             return None
-        return sum(s["played_seconds"] for s in snaps[1:]
+        return sum(s["played_seconds"] for s in counted_readings(snaps, tz)
                    if cutoff is None or day_offset(s, tz) <= cutoff)
     yesterday = listened(day - datetime.timedelta(days=1))
     prior = [x for x in (listened(day - datetime.timedelta(days=i)) for i in range(1, 8)) if x is not None]
@@ -616,7 +629,8 @@ def window_story(w):
     sn = w["snap"]
     q = sn["queue_count"]
     if w.get("first"):
-        return f"☀️ {episodes_phrase(q)} in the queue", None, None
+        heard = f" · finished {episodes_phrase(sn['played_count'])} ({dur_n(w['played'])} of audio)" if w.get("played") else ""
+        return f"☀️ {episodes_phrase(q)} in the queue{heard}", None, None
     played, n = w["played"], sn["played_count"]
     qd, arr = w["queue_delta"], w.get("arrivals_count") or 0
     if played > 0:
