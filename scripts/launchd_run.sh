@@ -36,18 +36,24 @@ fi
 # A tick normally finishes in a couple of minutes. launchd will not start a new
 # run while the last one is alive, so a hung one silently stops every later
 # hourly reading (it did, for two days, from 2026-10-28). Cap it instead.
+#
+# Do not wrap the tick in coreutils `timeout`: macOS then treats gtimeout, not
+# Python, as the program asking for the Podcasts database, Python's Full Disk
+# Access no longer applies, and every read fails with "unable to open database
+# file" (it did from 2026-10-30).
 TICK_TIMEOUT="${TICK_TIMEOUT:-600}"
-RUN=(python3 flow.py tick)
-if command -v timeout >/dev/null 2>&1; then
-  RUN=(timeout -k 10 "$TICK_TIMEOUT" "${RUN[@]}")
-fi
 
 log "TICK"
-"${RUN[@]}"
+python3 flow.py tick &
+tick=$!
+{ sleep "$TICK_TIMEOUT"; kill "$tick"; sleep 10; kill -9 "$tick"; } >/dev/null 2>&1 &
+watchdog=$!
+wait "$tick"
 rc=$?
+kill "$watchdog" 2>/dev/null
 if [[ $rc -eq 0 ]]; then
   log "OK"
-elif [[ $rc -eq 124 ]]; then
+elif [[ $rc -eq 143 || $rc -eq 137 ]]; then
   log "FAIL: flow.py tick timed out after ${TICK_TIMEOUT}s and was stopped"
   exit 1
 else
